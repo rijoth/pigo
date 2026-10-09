@@ -334,6 +334,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				}
 				sess, history, ids, lastInput = ns, nil, nil, 0
 				setSession(ns)
+				u.Restore(banner(modelLabel), nil)
 			}
 			if !force {
 				continue
