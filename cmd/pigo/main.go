@@ -344,6 +344,9 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				history, ids, lastInput = h, newIDs, 0
 			}
 		}
+		if u.Interactive() {
+			fmt.Fprintln(os.Stdout)
+		}
 		n := len(history)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		newHistory, err := ag.Run(ctx, history, line, emit)
