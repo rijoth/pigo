@@ -85,6 +85,9 @@ func run() int {
 	u.SetModels(pickerRefs())
 	u.SetContextWindow(models.ContextWindow(modelLabel))
 	u.SetModel(modelLabel)
+	if wd, werr := os.Getwd(); werr == nil {
+		u.SetProject(config.RelHome(wd))
+	}
 
 	contexts := config.ContextFiles()
 	loaded := skills.Discover()

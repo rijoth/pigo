@@ -194,3 +194,19 @@ func TestRelPath(t *testing.T) {
 		}
 	}
 }
+
+func TestRelHome(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	t.Setenv("HOME", home)
+	cases := map[string]string{
+		home:                          "~",
+		filepath.Join(home, "proj"):   filepath.Join("~", "proj"),
+		filepath.Join(tmp, "outside"): filepath.Join(tmp, "outside"),
+	}
+	for in, want := range cases {
+		if got := RelHome(in); got != want {
+			t.Errorf("RelHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

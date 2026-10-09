@@ -103,20 +103,35 @@ func RelPath(path string) string {
 	if path == "" {
 		return path
 	}
-	inside := func(base, rel string) bool {
-		return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-	}
 	if wd, err := os.Getwd(); err == nil && wd != "" {
-		if rel, err := filepath.Rel(wd, path); err == nil && inside(wd, rel) {
+		if rel, ok := relInside(wd, path); ok {
 			return rel
 		}
 	}
+	return RelHome(path)
+}
+
+// RelHome shortens path relative to the home directory, replacing home with
+// "~". Paths outside home are returned unchanged.
+func RelHome(path string) string {
+	if path == "" {
+		return path
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		if rel, err := filepath.Rel(home, path); err == nil && inside(home, rel) {
+		if rel, ok := relInside(home, path); ok {
 			return filepath.Join("~", rel)
 		}
 	}
 	return path
+}
+
+// relInside reports path relative to base when path lies inside base.
+func relInside(base, path string) (string, bool) {
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 // PromptWithFiles appends files to the base system prompt under global and

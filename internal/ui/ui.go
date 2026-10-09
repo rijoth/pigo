@@ -47,6 +47,7 @@ type UI struct {
 
 	contextWindow int
 	model         string
+	project       string
 	failed        bool
 	inTotal       int
 	outTotal      int
@@ -96,6 +97,10 @@ func (u *UI) SetContextWindow(n int) { u.contextWindow = n }
 // leaves the marker bare.
 func (u *UI) SetModel(label string) { u.model = label }
 
+// SetProject supplies the project directory label shown at the start of the
+// token footer. Empty omits it.
+func (u *UI) SetProject(label string) { u.project = label }
+
 // UsageTotals returns the accumulated input and output tokens for the session.
 func (u *UI) UsageTotals() (int, int) { return u.inTotal, u.outTotal }
 
@@ -143,6 +148,7 @@ func (u *UI) Render(ev event.Event) {
 			u.inTotal += ev.Usage.InputTokens
 			u.outTotal += ev.Usage.OutputTokens
 			fmt.Fprintln(u.out, u.styles.dim.Render(u.usageLine(ev.Usage)))
+			fmt.Fprintln(u.out, u.styles.dim.Render(u.rule()))
 		}
 	case event.Notice:
 		fmt.Fprintln(u.out, u.styles.dim.Render("· "+ev.Text))
@@ -251,10 +257,15 @@ func (u *UI) prompt(base, current string) string {
 	return label + " " + marker.Render(">") + " "
 }
 
-// usageLine formats the per-turn token footer. When the model's context window
-// is known it leads with context usage, since that is what drives compaction.
+// usageLine formats the per-turn token footer. It leads with the project
+// directory, then token counts, and includes context usage when the model's
+// context window is known.
 func (u *UI) usageLine(usage *llm.Usage) string {
-	parts := []string{fmt.Sprintf("tokens: %s in / %s out", humanTokens(usage.InputTokens), humanTokens(usage.OutputTokens))}
+	var parts []string
+	if u.project != "" {
+		parts = append(parts, u.project)
+	}
+	parts = append(parts, fmt.Sprintf("tokens: %s in / %s out", humanTokens(usage.InputTokens), humanTokens(usage.OutputTokens)))
 	if u.contextWindow > 0 {
 		parts = append(parts, fmt.Sprintf("context: %s / %s (%d%%)", humanTokens(usage.InputTokens), humanTokens(u.contextWindow), usage.InputTokens*100/u.contextWindow))
 	}
