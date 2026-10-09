@@ -7,7 +7,7 @@
 /dist/
 /bin/
 
-# Secrets and credentials — never commit
+# Secrets and credentials - never commit
 auth.json
 cred.json
 creds.json

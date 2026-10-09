@@ -117,7 +117,7 @@ func TestSelectorView(t *testing.T) {
 
 func TestNumberedView(t *testing.T) {
 	lines := NumberedView("provider", []Item{
-		{Value: "anthropic", Label: "anthropic — logged in"},
+		{Value: "anthropic", Label: "anthropic - logged in"},
 		{Value: "openai"},
 	}, "openai")
 	if len(lines) != 3 {
@@ -126,7 +126,7 @@ func TestNumberedView(t *testing.T) {
 	if lines[0] != "provider:" {
 		t.Fatalf("header = %q", lines[0])
 	}
-	if lines[1] != "  1) anthropic — logged in" {
+	if lines[1] != "  1) anthropic - logged in" {
 		t.Fatalf("row 1 = %q", lines[1])
 	}
 	if lines[2] != "  2) openai (current)" {

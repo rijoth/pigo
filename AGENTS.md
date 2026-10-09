@@ -2,6 +2,12 @@
 
 Read `ARCH.md` first. Obey section 11 (rules for LLM agents working on this repo).
 
+## Writing style
+
+- **No em dashes.** Use a plain ASCII hyphen `-` instead of `—` (U+2014) in
+  code, comments, docs, and commit messages. Prefer a hyphen with spaces
+  (` - `) where a parenthetical break is needed.
+
 ## Commits
 
 Commit after every completed change. Commit intelligently, not mechanically.

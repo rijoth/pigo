@@ -116,13 +116,13 @@ func handleLogout(u *ui.UI, authPath string) {
 func providerLabel(p providers.ProviderInfo, creds map[string]auth.Credential) string {
 	switch {
 	case p.OAuth:
-		return p.ID + " — not supported, use an API key"
+		return p.ID + " - not supported, use an API key"
 	case creds[p.ID].Key != "":
-		return p.ID + " — logged in"
+		return p.ID + " - logged in"
 	case p.EnvVar != "" && os.Getenv(p.EnvVar) != "":
-		return p.ID + " — env " + p.EnvVar
+		return p.ID + " - env " + p.EnvVar
 	default:
-		return p.ID + " — not configured"
+		return p.ID + " - not configured"
 	}
 }
 
