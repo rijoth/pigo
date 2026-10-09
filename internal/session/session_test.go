@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"pigo/internal/llm"
@@ -359,6 +360,88 @@ func TestOpenSkipsDanglingToolCallLeaf(t *testing.T) {
 	}
 	if s.Leaf() != "u1" {
 		t.Fatalf("leaf = %q, want u1", s.Leaf())
+	}
+}
+
+func TestProjectKeyDistinguishesPaths(t *testing.T) {
+	if projectKey("/a/b-c") == projectKey("/a-b/c") {
+		t.Fatal("distinct paths produced the same key")
+	}
+	if projectKey("/a/b") != projectKey("/a/b") {
+		t.Fatal("key is not deterministic")
+	}
+	if !strings.HasPrefix(projectKey("/a/b"), "a-b-") {
+		t.Fatalf("key is not readable: %q", projectKey("/a/b"))
+	}
+}
+
+func TestProjectDirScopedByWorkingDirectory(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	one, two := t.TempDir(), t.TempDir()
+	if err := os.Chdir(one); err != nil {
+		t.Fatal(err)
+	}
+	dirOne := ProjectDir()
+	if err := os.Chdir(two); err != nil {
+		t.Fatal(err)
+	}
+	dirTwo := ProjectDir()
+	if dirOne == dirTwo {
+		t.Fatalf("project dirs collided: %q", dirOne)
+	}
+	if !strings.HasPrefix(dirOne, filepath.Join(state, "pigo", "sessions")) {
+		t.Fatalf("dir %q is not under the state dir", dirOne)
+	}
+
+	s, err := New(dirOne)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Append(llm.Message{Role: llm.RoleUser, Text: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	if _, err := Latest(dirTwo); err == nil {
+		t.Fatal("sessions leaked into another project")
+	}
+	if latest, err := Latest(dirOne); err != nil || latest != s.Path() {
+		t.Fatalf("Latest(one) = %q, %v", latest, err)
+	}
+}
+
+func TestResolve(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	if got, err := Resolve(dir, s.ID()); err != nil || got != s.Path() {
+		t.Fatalf("exact id: got %q, %v", got, err)
+	}
+	if got, err := Resolve(dir, s.ID()[:4]); err != nil || got != s.Path() {
+		t.Fatalf("id prefix: got %q, %v", got, err)
+	}
+	if _, err := Resolve(dir, "does-not-exist"); err == nil {
+		t.Fatal("expected an error for a missing session")
+	}
+
+	other := filepath.Join(t.TempDir(), "other.jsonl")
+	if err := os.WriteFile(other, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Resolve(dir, other); err != nil || got != other {
+		t.Fatalf("explicit path: got %q, %v", got, err)
 	}
 }
 

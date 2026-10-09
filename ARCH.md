@@ -306,7 +306,10 @@ Tool descriptions (the text the model sees) are constants at the top of each fil
 
 Append-only JSONL. One file per session.
 
-- Location: `$XDG_STATE_HOME/pigo/sessions/<timestamp>-<shortid>.jsonl` (default `~/.local/state/pigo/sessions/`).
+- Location: `$XDG_STATE_HOME/pigo/sessions/<project>/<timestamp>-<shortid>.jsonl`
+  (default `~/.local/state/pigo/sessions/`). `<project>` is a filesystem-safe
+  name derived from the working directory, so resume only sees the current
+  project. `session.ProjectDir()` returns it.
 - One line per record:
 
 ```json
@@ -323,6 +326,8 @@ package session
 func New(dir string) (*Session, error)
 func Open(path string) (*Session, []llm.Message, []string, error) // replay to rebuild the active branch
 func Latest(dir string) (string, error)                           // for `pigo -c`
+func ProjectDir() string                                          // sessions dir for the working directory
+func Resolve(dir, ref string) (string, error)                     // resolve a path or session id within the project
 func (s *Session) Append(m llm.Message) (string, error)           // fsync not required; flush each write
 
 // Tree navigation for `/tree`.
@@ -476,8 +481,8 @@ Wiring only: parse flags, build provider, tools, agent, session, then run either
 | Flag | Meaning |
 |------|---------|
 | `-p "text"` | Non-interactive: run one turn with this prompt (or read stdin if `-p -`), print the result, exit. |
-| `-c` | Continue the most recent session. |
-| `-r path` | Resume a specific session file. |
+| `-c` | Continue the most recent session in the current project. |
+| `-r path\|id` | Resume a session by file path or project session id. |
 | `-m provider/model` | Override model. |
 | `-confirm` | Ask before running each `bash` call (sets `Agent.Approve`). |
 

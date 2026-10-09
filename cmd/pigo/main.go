@@ -46,7 +46,16 @@ func run() int {
 	}
 
 	state := session.StateDir()
-	sess, history, ids, err := session.OpenOrNew(*resume, *cont, filepath.Join(state, "sessions"))
+	projectDir := session.ProjectDir()
+	resumePath := ""
+	if *resume != "" {
+		resolved, rerr := session.Resolve(projectDir, *resume)
+		if rerr != nil {
+			return fatal(rerr)
+		}
+		resumePath = resolved
+	}
+	sess, history, ids, err := session.OpenOrNew(resumePath, *cont, projectDir)
 	if err != nil {
 		return fatal(err)
 	}
@@ -106,7 +115,7 @@ func run() int {
 		}
 		return runOnce(ag, sess, history, *prompt, u.Render, u.Interrupt)
 	}
-	return runInteractive(ag, sess, history, ids, u, modelLabel, sessionID, func(s *session.Session) { active = s })
+	return runInteractive(ag, sess, history, ids, u, modelLabel, projectDir, sessionID, func(s *session.Session) { active = s })
 }
 
 func fatal(err error) int {
@@ -172,7 +181,7 @@ func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prom
 	return 0
 }
 
-func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, modelLabel string, sessionID func() string, setSession func(*session.Session)) int {
+func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, modelLabel, projectDir string, sessionID func() string, setSession func(*session.Session)) int {
 	var lastInput int
 	contextWindow := models.ContextWindow(modelLabel)
 	compactAt := compactLimit(contextWindow)
@@ -294,7 +303,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				handleLogout(u, auth.Path())
 				continue
 			case "resume":
-				if resumeSession(u, &sess, &history, &ids, &lastInput, setSession) {
+				if resumeSession(u, &sess, &history, &ids, &lastInput, projectDir, setSession) {
 					contextWindow = models.ContextWindow(modelLabel)
 					compactAt = compactLimit(contextWindow)
 					u.SetContextWindow(contextWindow)
@@ -310,7 +319,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				force = true
 				compactArgs = strings.TrimSpace(arg)
 			case "new":
-				ns, err := session.New(filepath.Join(session.StateDir(), "sessions"))
+				ns, err := session.New(projectDir)
 				if err != nil {
 					return fatal(err)
 				}
@@ -510,8 +519,8 @@ func entryLabel(entries []session.Entry, id string) string {
 
 // resumeSession shows the session picker and switches to the chosen session.
 // It reports whether the active session changed.
-func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids *[]string, lastInput *int, setSession func(*session.Session)) bool {
-	infos, err := session.List(filepath.Join(session.StateDir(), "sessions"))
+func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids *[]string, lastInput *int, projectDir string, setSession func(*session.Session)) bool {
+	infos, err := session.List(projectDir)
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
 		return false

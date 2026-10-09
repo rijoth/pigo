@@ -4,8 +4,10 @@ package session
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,6 +76,71 @@ func StateDir() string {
 		return ".pigo"
 	}
 	return filepath.Join(home, ".local", "state", "pigo")
+}
+
+// ProjectDir returns the sessions directory for the current working directory.
+// Sessions are grouped per project so resume only sees the project in view.
+func ProjectDir() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return filepath.Join(StateDir(), "sessions")
+	}
+	return filepath.Join(StateDir(), "sessions", projectKey(wd))
+}
+
+// projectKey maps a working directory to a filesystem-safe directory name: a
+// readable slug plus a short hash so distinct paths never collide.
+func projectKey(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = filepath.Clean(dir)
+	}
+	slug := strings.Trim(filepath.ToSlash(abs), "/")
+	slug = strings.NewReplacer("/", "-", ":", "-").Replace(slug)
+	if slug == "" {
+		slug = "root"
+	}
+	if r := []rune(slug); len(r) > 60 {
+		slug = string(r[:60])
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return slug + "-" + hex.EncodeToString(sum[:4])
+}
+
+// Resolve returns the session file for ref in dir. An existing file path is
+// used as-is; otherwise ref is matched as a session id (exact first, then a
+// unique prefix) inside dir.
+func Resolve(dir, ref string) (string, error) {
+	if ref == "" {
+		return "", fmt.Errorf("empty session reference")
+	}
+	if _, err := os.Stat(ref); err == nil {
+		return ref, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("no session %q in current project", ref)
+	}
+	match := ""
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".jsonl")
+		if id == ref {
+			return filepath.Join(dir, e.Name()), nil
+		}
+		if strings.HasPrefix(id, ref) {
+			if match != "" {
+				return "", fmt.Errorf("session %q is ambiguous", ref)
+			}
+			match = filepath.Join(dir, e.Name())
+		}
+	}
+	if match == "" {
+		return "", fmt.Errorf("no session %q in current project", ref)
+	}
+	return match, nil
 }
 
 // ModelRefPath returns the file that remembers the last model chosen with
@@ -248,6 +315,9 @@ func OpenOrNew(resume string, cont bool, dir string) (*Session, []llm.Message, [
 func Latest(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("no sessions in %s", dir)
+		}
 		return "", err
 	}
 	var newest string
