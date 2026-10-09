@@ -35,7 +35,7 @@ func main() {
 func run() int {
 	prompt := flag.String("p", "", "run one prompt non-interactively (use - to read stdin)")
 	cont := flag.Bool("c", false, "continue the most recent session")
-	resume := flag.String("r", "", "resume a specific session file")
+	resume := flag.String("r", "", "resume a session by file path or project id")
 	modelFlag := flag.String("m", "", "model as provider/model")
 	confirm := flag.Bool("confirm", false, "ask before running each bash call")
 	jsonOut := flag.Bool("json", false, "write one JSON event per line (requires -p)")
