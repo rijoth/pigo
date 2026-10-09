@@ -15,6 +15,7 @@ func TestRestoreClearsAndReplays(t *testing.T) {
 	u, b := newTestUI()
 	u.editor = &lineEditor{} // non-nil makes Clear emit the escape
 	u.raw = true
+	u.model = "test/model"
 	history := []llm.Message{
 		{Role: llm.RoleUser, Text: "hello"},
 		{Role: llm.RoleAssistant, Text: "hi", Calls: []llm.ToolCall{{ID: "c1", Name: "bash", Args: json.RawMessage(`{"command":"ls"}`)}}},
@@ -25,10 +26,13 @@ func TestRestoreClearsAndReplays(t *testing.T) {
 	if !strings.HasPrefix(out, "\x1b[2J\x1b[H") {
 		t.Fatalf("did not clear the screen: %q", out)
 	}
-	for _, want := range []string{"PiGo test", "openai/gpt-5", "user", "hello", "hi", "bash", "file"} {
+	for _, want := range []string{"PiGo test", "openai/gpt-5", "test/model > hello", "hi", "bash", "file"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in restored output:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "user") {
+		t.Fatalf("user label leaked into restored output:\n%s", out)
 	}
 	if strings.Index(out, "PiGo test") > strings.Index(out, "hello") {
 		t.Fatalf("header is not before the transcript:\n%s", out)

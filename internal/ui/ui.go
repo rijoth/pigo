@@ -185,9 +185,7 @@ func (u *UI) Restore(header string, history []llm.Message) {
 	for _, m := range history {
 		switch m.Role {
 		case llm.RoleUser:
-			u.write(u.styles.label.Render("user") + "\n")
-			u.renderTextBlock(m.Text)
-			u.write("\n")
+			u.write(u.prompt(MainPrompt, "") + m.Text + "\n")
 		case llm.RoleAssistant:
 			u.renderTextBlock(m.Text)
 			for i := range m.Calls {
