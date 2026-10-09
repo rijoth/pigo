@@ -60,6 +60,7 @@ func run() int {
 		return fatal(err)
 	}
 	defer sess.Close()
+	resumed := resumePath != "" || *cont
 
 	active := sess
 	sessionID := func() string { return active.ID() }
@@ -84,6 +85,9 @@ func run() int {
 	u.SetModels(pickerRefs())
 	u.SetContextWindow(models.ContextWindow(modelLabel))
 	u.SetModel(modelLabel)
+	if *prompt == "" && u.Interactive() && resumed {
+		u.Restore(history)
+	}
 
 	contexts := config.ContextFiles()
 	loaded := skills.Discover()
@@ -551,6 +555,7 @@ func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids
 	_ = (*sess).Close()
 	*sess, *history, *ids, *lastInput = ns, h, newIDs, 0
 	setSession(ns)
+	u.Restore(h)
 	u.Render(event.Event{Kind: event.Notice, Text: "resumed " + ns.ID()})
 	return true
 }

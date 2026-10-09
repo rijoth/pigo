@@ -393,6 +393,7 @@ All terminal concerns live here and only here.
 |---------|--------|
 | `/exit` | Quit |
 | `/new` | Start a fresh session |
+| `/resume` | Pick another session in the current project; clears the screen and restores it |
 | `/compact` | Force compaction (once implemented) |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |

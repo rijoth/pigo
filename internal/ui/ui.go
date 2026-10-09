@@ -163,6 +163,59 @@ func (u *UI) Banner(text string) {
 	fmt.Fprintln(u.out)
 }
 
+// Clear erases the screen and moves the cursor home. It is a no-op when the
+// UI is not interactive, so piped output stays clean.
+func (u *UI) Clear() {
+	if u.editor == nil {
+		return
+	}
+	fmt.Fprint(u.out, "\x1b[2J\x1b[H")
+}
+
+// Restore clears the screen and replays a resumed conversation so the user
+// sees the context the session continues from. It is the inverse of the
+// startup-only rendering: user turns, assistant text, tool calls, and results
+// are printed in order.
+func (u *UI) Restore(history []llm.Message) {
+	u.Clear()
+	calls := map[string]*llm.ToolCall{}
+	for _, m := range history {
+		switch m.Role {
+		case llm.RoleUser:
+			u.write(u.styles.label.Render("user") + "\n")
+			u.renderTextBlock(m.Text)
+			u.write("\n")
+		case llm.RoleAssistant:
+			u.renderTextBlock(m.Text)
+			for i := range m.Calls {
+				call := &m.Calls[i]
+				calls[call.ID] = call
+				u.Render(event.Event{Kind: event.ToolStart, Call: call})
+			}
+		case llm.RoleTool:
+			for i := range m.Results {
+				res := m.Results[i]
+				u.Render(event.Event{Kind: event.ToolResult, Call: calls[res.CallID], Result: &res})
+			}
+		}
+	}
+	u.flushMarkdown()
+}
+
+// renderTextBlock writes one message body, rendered as markdown when styling is
+// on and as plain text otherwise.
+func (u *UI) renderTextBlock(text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	if u.raw || u.md == nil {
+		fmt.Fprintln(u.out, text)
+		return
+	}
+	u.md.Write(text)
+	u.md.Flush()
+}
+
 // prompt renders the primary prompt for the line currently being edited. The
 // label is the model, or "!" while the line starts with a shell escape; the
 // marker is accent-colored, yellow in shell mode, and red after a failed turn.
