@@ -126,6 +126,7 @@ func noticeLoaded(contexts []config.ContextFile, loaded []skills.Skill, modelLab
 		names = append(names, s.Name)
 	}
 	var b strings.Builder
+	b.WriteString("PiGo " + fantasy.Version)
 	section := func(title string, items []string) {
 		if len(items) == 0 {
 			return
@@ -140,9 +141,7 @@ func noticeLoaded(contexts []config.ContextFile, loaded []skills.Skill, modelLab
 	if modelLabel != "" {
 		section("Model", []string{modelLabel})
 	}
-	if b.Len() > 0 {
-		u.Banner(b.String())
-	}
+	u.Banner(b.String())
 }
 
 func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prompt string, emit func(event.Event), interrupt func()) int {
