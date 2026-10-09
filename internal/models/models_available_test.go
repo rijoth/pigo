@@ -9,6 +9,7 @@ import (
 func TestAvailableModelsMergesBuiltins(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	pigoDir := filepath.Join(dir, "pigo")
 	if err := os.MkdirAll(pigoDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -59,6 +60,7 @@ func TestAvailableModelsMergesBuiltins(t *testing.T) {
 
 func TestAvailableModelsBuiltinsOnly(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	models := AvailableModels()
 	if len(models) != len(BuiltinModels) {
 		t.Fatalf("got %d models, want %d built-ins", len(models), len(BuiltinModels))

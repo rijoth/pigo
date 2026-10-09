@@ -53,6 +53,7 @@ func TestProvidersMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 
 	ps := Providers()
 	ids := make(map[string]ProviderInfo, len(ps))

@@ -11,6 +11,7 @@ import (
 func TestAvailableModelsMergesStore(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	pigoDir := filepath.Join(dir, "pigo")
 	if err := os.MkdirAll(pigoDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -60,9 +61,36 @@ func TestLoadModelsStoreMissing(t *testing.T) {
 	}
 }
 
+// TestAvailableModelsFallsBackToPiStore checks that a logged-in provider's
+// catalog in Pi's models-store.json is picked up when pigo has no store of its
+// own, so the picker lists the provider's real models.
+func TestAvailableModelsFallsBackToPiStore(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	piDir := t.TempDir()
+	t.Setenv("PI_CODING_AGENT_DIR", piDir)
+	if err := os.WriteFile(filepath.Join(piDir, "models-store.json"), []byte(`{
+	  "opencode-go": {
+	    "baseUrl": "https://opencode.ai/zen/go/v1",
+	    "api": "openai-completions",
+	    "models": [
+	      {"id": "glm-5.2", "name": "GLM-5.2"},
+	      {"id": "kimi-k3", "name": "Kimi K3"}
+	    ]
+	  }
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	models := AvailableModels()
+	if _, ok := Find(models, "opencode-go/kimi-k3"); !ok {
+		t.Fatal("Pi store model opencode-go/kimi-k3 missing")
+	}
+}
+
 // TestBuiltinOpenCodeGo checks the opencode-go default carries its endpoint.
 func TestBuiltinOpenCodeGo(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 	e, ok := Find(AvailableModels(), "opencode-go/glm-5.2")
 	if !ok || e.BaseURL != "https://opencode.ai/zen/go/v1" || e.API != "openai-completions" {
 		t.Fatalf("opencode-go/glm-5.2 = %+v ok = %v", e, ok)

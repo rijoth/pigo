@@ -115,6 +115,22 @@ func ModelsStorePath() string {
 	return filepath.Join(dir, "models-store.json")
 }
 
+// PiModelsStorePath returns Pi's cached provider catalog, honoring the same
+// override as Pi: PI_CODING_AGENT_DIR, else ~/.pi/agent. pigo consumes Pi's
+// cache because pigo does not refresh provider catalogs itself, so this is
+// what makes a logged-in provider's real model list appear in the picker.
+func PiModelsStorePath() string {
+	dir := os.Getenv("PI_CODING_AGENT_DIR")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".pi", "agent")
+	}
+	return filepath.Join(dir, "models-store.json")
+}
+
 // LoadModels reads a Pi models.json and returns a flat list of provider/model
 // entries. A missing file yields an empty list and no error.
 func LoadModels(path string) ([]ModelEntry, error) {
@@ -216,19 +232,22 @@ func sortModels(models []ModelEntry) {
 	})
 }
 
-// DefaultModels loads Pi's models.json, returning nil on any error.
+// DefaultModels loads pigo's models.json, returning nil on any error.
 func DefaultModels() []ModelEntry {
 	models, _ := LoadModels(ModelsPath())
 	return models
 }
 
-// DefaultModelsStore loads Pi's models-store.json, returning nil on any error.
+// DefaultModelsStore loads the cached provider catalog, returning nil on any
+// error. pigo's own store wins on a duplicate ref; Pi's store fills the rest,
+// which is where logged-in providers' model lists normally live.
 func DefaultModelsStore() []ModelEntry {
-	models, _ := LoadModelsStore(ModelsStorePath())
-	return models
+	own, _ := LoadModelsStore(ModelsStorePath())
+	pi, _ := LoadModelsStore(PiModelsStorePath())
+	return append(own, pi...)
 }
 
-// AvailableModels merges Pi's user config (models.json), Pi's cached provider
+// AvailableModels merges pigo's user config (models.json), the cached provider
 // catalog (models-store.json), and BuiltinModels. Earlier sources win on a
 // duplicate provider/model, so a models.json entry can override the catalog
 // and a catalog entry can override a built-in's base URL, key, or headers.

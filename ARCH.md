@@ -203,10 +203,12 @@ type Provider interface {
 
 - `llm/llm.go`: the types above and the `Provider` interface, nothing else.
 - `llm/dummy.go`: the no-model provider.
-- `models/models.go`: pigo's `models.json`/`models-store.json` catalog, `ModelEntry`,
-  `AvailableModels`, `Find`, `ContextWindow`, and models.json key/header
-  interpolation. Both files live in pigo's config dir
-  (`$XDG_CONFIG_HOME/pigo`, default `~/.config/pigo`).
+- `models/models.go`: pigo's `models.json` catalog plus the cached
+  `models-store.json`, `ModelEntry`, `AvailableModels`, `Find`, `ContextWindow`,
+  and models.json key/header interpolation. pigo's `models.json` lives in its
+  config dir (`$XDG_CONFIG_HOME/pigo`, default `~/.config/pigo`). The store is
+  read from there first and then from Pi's agent dir (`PI_CODING_AGENT_DIR`,
+  default `~/.pi/agent`), because Pi writes the catalog pigo does not fetch.
 - `providers/providers.go`: the provider list, standard env vars, credential
   resolution (`ResolveKey`), and `AuthenticatedModels`.
 - `fantasy/fantasy.go`: `NewFantasy`, `NewFantasyEntry`, `NewFromRef`, and
@@ -407,9 +409,11 @@ list.
 
 The model picker lists `provider/model` refs from pigo's `models.json`
 (`$XDG_CONFIG_HOME/pigo/models.json`, default `~/.config/pigo/models.json`) and
-its cached provider catalog `models-store.json`, merged with the built-in
-defaults and filtered to providers with a usable key (auth.json, the provider
-env var, or a `models.json` `apiKey`). It is an in-place raw-terminal list:
+the cached provider catalog `models-store.json`, read from pigo's config dir
+first and then from Pi's agent dir (`PI_CODING_AGENT_DIR`, default
+`~/.pi/agent`), merged with the built-in defaults and filtered to providers
+with a usable key (auth.json, the provider env var, or a `models.json`
+`apiKey`). It is an in-place raw-terminal list:
 type to filter, Up/Down to move, Enter to select, Esc to cancel. The list is rebuilt
 when `/model` opens and after `/login`, so a new credential shows its models.
 The selected ref is remembered in `$XDG_STATE_HOME/pigo/model` (default
