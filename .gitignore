@@ -1,0 +1,43 @@
+# Build artifacts
+/pigo
+/cmd/pigo/pigo
+*.exe
+*.test
+*.out
+/dist/
+/bin/
+
+# Secrets and credentials — never commit
+auth.json
+cred.json
+creds.json
+credentials.json
+*.key
+*.pem
+*.p12
+.env
+.env.*
+.envrc
+*.token
+secrets.*
+
+# Local working notes (not for version control)
+features.md
+
+# Go
+vendor/
+*.prof
+coverage.txt
+
+# State and caches
+/.pigo/
+pigo-sessions/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

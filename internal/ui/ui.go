@@ -1,0 +1,304 @@
+// Package ui owns all terminal input, output, and styling.
+package ui
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/term"
+
+	"pigo/internal/config"
+	"pigo/internal/event"
+	"pigo/internal/llm"
+	"pigo/internal/markdown"
+)
+
+// ErrInterrupt signals that the user pressed Ctrl+C at the prompt.
+var ErrInterrupt = errors.New("interrupt")
+
+// UI renders agent events and reads user input.
+type UI struct {
+	out    io.Writer
+	errOut io.Writer
+
+	raw    bool // RenderMode: "raw", or plain (non-TTY) output
+	color  bool // ANSI styling enabled
+	narrow bool // terminal below config.NarrowWidth
+	width  int
+	styles styles
+	md     *markdown.Renderer
+
+	editor  *lineEditor
+	scanner *bufio.Scanner
+	models  []string
+
+	lastCall   *llm.ToolCall
+	lastResult *llm.ToolResult
+
+	contextWindow int
+	model         string
+	inTotal       int
+	outTotal      int
+}
+
+// New builds a UI. historyFile may be empty to disable persistent history.
+func New(out, errOut *os.File, historyFile string) *UI {
+	interactive := isTerminal(os.Stdin) && isTerminal(out)
+	// Non-TTY output is plain, and "raw" is the explicit escape hatch.
+	raw := config.RenderMode == "raw" || !interactive
+	color := interactive && !raw && os.Getenv("NO_COLOR") == ""
+	width := termWidth(out)
+	u := &UI{
+		out:    out,
+		errOut: errOut,
+		raw:    raw,
+		color:  color,
+		narrow: width < config.NarrowWidth,
+		width:  width,
+		styles: newStyles(color),
+	}
+	if !raw {
+		u.md = markdown.NewRenderer(width, color, u.narrow, func(s string) string { return u.styles.label.Render(s) }, u.write)
+	}
+	if interactive {
+		u.editor = newLineEditor(historyFile)
+	}
+	if u.editor == nil {
+		u.scanner = bufio.NewScanner(os.Stdin)
+	}
+	return u
+}
+
+// SetModels supplies the model refs used by the /model picker and completion.
+func (u *UI) SetModels(refs []string) {
+	u.models = refs
+	if u.editor != nil {
+		u.editor.models = refs
+	}
+}
+
+// SetContextWindow supplies the current model's context size for the footer.
+// Zero disables the context line.
+func (u *UI) SetContextWindow(n int) { u.contextWindow = n }
+
+// SetModel supplies the current model label shown at the right of the token
+// footer. Empty hides it.
+func (u *UI) SetModel(label string) { u.model = label }
+
+// UsageTotals returns the accumulated input and output tokens for the session.
+func (u *UI) UsageTotals() (int, int) { return u.inTotal, u.outTotal }
+
+// Interactive reports whether the UI can prompt on a terminal.
+func (u *UI) Interactive() bool { return u.editor != nil }
+
+// Close releases the line editor.
+func (u *UI) Close() {
+	if u.editor != nil {
+		u.editor.Close()
+	}
+}
+
+// Interrupt flushes any buffered markdown and resets styles after Ctrl+C, so a
+// cancelled stream never leaves a half-open ANSI sequence on screen.
+func (u *UI) Interrupt() {
+	u.flushMarkdown()
+}
+
+// Render is the single entry point for agent events.
+func (u *UI) Render(ev event.Event) {
+	switch ev.Kind {
+	case event.TextDelta:
+		if u.raw {
+			fmt.Fprint(u.out, ev.Text)
+		} else {
+			u.md.Write(ev.Text)
+		}
+	case event.ToolStart:
+		if u.raw {
+			fmt.Fprintln(u.out, "> "+toolSummary(ev.Call.Name, ev.Call.Args, u.width))
+			return
+		}
+		u.renderToolStart(ev.Call)
+	case event.ToolResult:
+		if u.raw {
+			u.renderRawResult(ev.Result)
+			return
+		}
+		u.renderToolResult(ev.Call, ev.Result, false)
+	case event.TurnEnd:
+		u.flushMarkdown()
+		fmt.Fprintln(u.out)
+		if ev.Usage != nil {
+			u.inTotal += ev.Usage.InputTokens
+			u.outTotal += ev.Usage.OutputTokens
+			fmt.Fprintln(u.out, u.styles.dim.Render(u.footer(ev.Usage)))
+		}
+	case event.Notice:
+		fmt.Fprintln(u.out, u.styles.dim.Render("· "+ev.Text))
+	case event.Error:
+		u.flushMarkdown()
+		fmt.Fprintln(u.errOut, u.styles.err.Render("error: "+ev.Err.Error()))
+	}
+}
+
+func (u *UI) write(s string) { fmt.Fprint(u.out, s) }
+
+// Banner prints a leading blank line then a dim multi-line block. It is used
+// for the startup summary so sections do not get the notice bullet prefix.
+func (u *UI) Banner(text string) {
+	fmt.Fprintln(u.out)
+	fmt.Fprintln(u.out, u.styles.dim.Render(text))
+	fmt.Fprintln(u.out)
+}
+
+// footer is the token line with the model label pushed to the right edge. On a
+// terminal it pads with spaces; otherwise the label is appended after the
+// token info so piped output stays free of trailing whitespace.
+func (u *UI) footer(usage *llm.Usage) string {
+	line := u.usageLine(usage)
+	if u.model == "" {
+		return line
+	}
+	if u.editor == nil || u.width <= 0 {
+		return line + "  " + u.model
+	}
+	pad := u.width - utf8.RuneCountInString(line) - utf8.RuneCountInString(u.model)
+	if pad < 2 {
+		return line + "  " + u.model
+	}
+	return line + strings.Repeat(" ", pad) + u.model
+}
+
+// usageLine formats the per-turn token footer. When the model's context window
+// is known it leads with context usage, since that is what drives compaction.
+func (u *UI) usageLine(usage *llm.Usage) string {
+	parts := []string{fmt.Sprintf("tokens: %s in / %s out", humanTokens(usage.InputTokens), humanTokens(usage.OutputTokens))}
+	if u.contextWindow > 0 {
+		parts = append(parts, fmt.Sprintf("context: %s / %s (%d%%)", humanTokens(usage.InputTokens), humanTokens(u.contextWindow), usage.InputTokens*100/u.contextWindow))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// humanTokens renders a token count as "128k" when large enough to be noisy.
+func humanTokens(n int) string {
+	if n >= 1000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return strconv.Itoa(n)
+}
+func (u *UI) renderRawResult(r *llm.ToolResult) {
+	if r == nil {
+		return
+	}
+	fmt.Fprint(u.out, r.Content)
+	if !strings.HasSuffix(r.Content, "\n") {
+		fmt.Fprintln(u.out)
+	}
+}
+
+func (u *UI) flushMarkdown() {
+	if u.md != nil {
+		u.md.Flush()
+	}
+	if u.color {
+		fmt.Fprint(u.out, "\x1b[0m")
+	}
+}
+
+// ReadLine reads one logical line. A trailing backslash continues input.
+func (u *UI) ReadLine(prompt string) (string, error) {
+	if u.editor != nil {
+		return u.readEditorLine(prompt)
+	}
+	if u.scanner == nil || !u.scanner.Scan() {
+		if u.scanner != nil {
+			if err := u.scanner.Err(); err != nil {
+				return "", err
+			}
+		}
+		return "", io.EOF
+	}
+	return u.scanner.Text(), nil
+}
+
+// ReadSecret prompts for a secret and reads it without echoing whenever stdin
+// is a terminal, even if stdout is redirected. The value is never written to
+// history or logs.
+func (u *UI) ReadSecret(prompt string) (string, error) {
+	if isTerminal(os.Stdin) {
+		fmt.Fprint(u.out, prompt)
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(u.out)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return u.ReadLine(prompt)
+}
+
+// Confirm asks the user to approve a tool call.
+func (u *UI) Confirm(name string, args json.RawMessage) bool {
+	fmt.Fprintf(u.errOut, "run %s? [y/N] ", toolSummary(name, args, u.width))
+	line, err := u.ReadLine("")
+	if err != nil {
+		return false
+	}
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "y" || line == "yes"
+}
+
+// Ask prints a yes/no question and reads the answer. It is not interactive
+// when stdout is redirected, so it declines by default.
+func (u *UI) Ask(question string) bool {
+	if u.editor == nil {
+		return false
+	}
+	fmt.Fprintf(u.out, "%s [y/N] ", question)
+	line, err := u.ReadLine("")
+	if err != nil {
+		return false
+	}
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "y" || line == "yes"
+}
+
+func toolSummary(name string, args json.RawMessage, width int) string {
+	summary := compactJSON(args)
+	var m map[string]any
+	if json.Unmarshal(args, &m) == nil {
+		for _, k := range []string{"path", "command"} {
+			if v, ok := m[k].(string); ok && v != "" {
+				summary = v
+				break
+			}
+		}
+	}
+	summary = firstLine(summary)
+	label := name + ": " + summary
+	return truncateLine(label, width)
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func termWidth(f *os.File) int {
+	if w, _, err := term.GetSize(int(f.Fd())); err == nil && w > 0 {
+		return w
+	}
+	if v := os.Getenv("COLUMNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 20 {
+			return n
+		}
+	}
+	return 80
+}
