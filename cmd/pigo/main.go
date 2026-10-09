@@ -85,9 +85,6 @@ func run() int {
 	u.SetModels(pickerRefs())
 	u.SetContextWindow(models.ContextWindow(modelLabel))
 	u.SetModel(modelLabel)
-	if *prompt == "" && u.Interactive() && resumed {
-		u.Restore(history)
-	}
 
 	contexts := config.ContextFiles()
 	loaded := skills.Discover()
@@ -95,8 +92,13 @@ func run() int {
 	if s := skills.Section(loaded); s != "" {
 		system += "\n\n" + s
 	}
+	banner := func(model string) string { return bannerText(contexts, loaded, model) }
 	if u.Interactive() {
-		noticeLoaded(contexts, loaded, modelLabel, u)
+		if *prompt == "" && resumed {
+			u.Restore(banner(modelLabel), history)
+		} else {
+			u.Banner(banner(modelLabel))
+		}
 	}
 
 	ag := &agent.Agent{
@@ -119,7 +121,7 @@ func run() int {
 		}
 		return runOnce(ag, sess, history, *prompt, u.Render, u.Interrupt)
 	}
-	return runInteractive(ag, sess, history, ids, u, modelLabel, projectDir, sessionID, func(s *session.Session) { active = s })
+	return runInteractive(ag, sess, history, ids, u, modelLabel, banner, projectDir, sessionID, func(s *session.Session) { active = s })
 }
 
 func fatal(err error) int {
@@ -127,10 +129,10 @@ func fatal(err error) int {
 	return 1
 }
 
-// noticeLoaded prints the context files, skills, and model picked up at
-// startup in one block, using paths relative to the working directory or the
-// home directory.
-func noticeLoaded(contexts []config.ContextFile, loaded []skills.Skill, modelLabel string, u *ui.UI) {
+// bannerText renders the startup summary: pigo version, the context files and
+// skills picked up, and the model, using paths relative to the working
+// directory or the home directory.
+func bannerText(contexts []config.ContextFile, loaded []skills.Skill, modelLabel string) string {
 	var paths, names []string
 	for _, f := range contexts {
 		paths = append(paths, config.RelPath(f.Path))
@@ -154,7 +156,7 @@ func noticeLoaded(contexts []config.ContextFile, loaded []skills.Skill, modelLab
 	if modelLabel != "" {
 		section("Model", []string{modelLabel})
 	}
-	u.Banner(b.String())
+	return b.String()
 }
 
 func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prompt string, emit func(event.Event), interrupt func()) int {
@@ -185,7 +187,7 @@ func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prom
 	return 0
 }
 
-func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, modelLabel, projectDir string, sessionID func() string, setSession func(*session.Session)) int {
+func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, modelLabel string, banner func(string) string, projectDir string, sessionID func() string, setSession func(*session.Session)) int {
 	var lastInput int
 	contextWindow := models.ContextWindow(modelLabel)
 	compactAt := compactLimit(contextWindow)
@@ -307,7 +309,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				handleLogout(u, auth.Path())
 				continue
 			case "resume":
-				if resumeSession(u, &sess, &history, &ids, &lastInput, projectDir, setSession) {
+				if resumeSession(u, &sess, &history, &ids, &lastInput, banner(modelLabel), projectDir, setSession) {
 					contextWindow = models.ContextWindow(modelLabel)
 					compactAt = compactLimit(contextWindow)
 					u.SetContextWindow(contextWindow)
@@ -523,7 +525,7 @@ func entryLabel(entries []session.Entry, id string) string {
 
 // resumeSession shows the session picker and switches to the chosen session.
 // It reports whether the active session changed.
-func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids *[]string, lastInput *int, projectDir string, setSession func(*session.Session)) bool {
+func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids *[]string, lastInput *int, header, projectDir string, setSession func(*session.Session)) bool {
 	infos, err := session.List(projectDir)
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
@@ -555,7 +557,7 @@ func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids
 	_ = (*sess).Close()
 	*sess, *history, *ids, *lastInput = ns, h, newIDs, 0
 	setSession(ns)
-	u.Restore(h)
+	u.Restore(header, h)
 	u.Render(event.Event{Kind: event.Notice, Text: "resumed " + ns.ID()})
 	return true
 }

@@ -172,12 +172,15 @@ func (u *UI) Clear() {
 	fmt.Fprint(u.out, "\x1b[2J\x1b[H")
 }
 
-// Restore clears the screen and replays a resumed conversation so the user
-// sees the context the session continues from. It is the inverse of the
-// startup-only rendering: user turns, assistant text, tool calls, and results
-// are printed in order.
-func (u *UI) Restore(history []llm.Message) {
+// Restore clears the screen, prints the banner header, and replays a resumed
+// conversation so the user sees the context the session continues from. The
+// header is skipped when empty. User turns, assistant text, tool calls, and
+// results are printed in order.
+func (u *UI) Restore(header string, history []llm.Message) {
 	u.Clear()
+	if header != "" {
+		u.Banner(header)
+	}
 	calls := map[string]*llm.ToolCall{}
 	for _, m := range history {
 		switch m.Role {
