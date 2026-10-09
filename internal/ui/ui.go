@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -22,6 +21,10 @@ import (
 
 // ErrInterrupt signals that the user pressed Ctrl+C at the prompt.
 var ErrInterrupt = errors.New("interrupt")
+
+// MainPrompt is the primary interactive prompt. main passes it to ReadLine so
+// the UI can place the model or mode label before the marker.
+const MainPrompt = "> "
 
 // UI renders agent events and reads user input.
 type UI struct {
@@ -44,6 +47,7 @@ type UI struct {
 
 	contextWindow int
 	model         string
+	failed        bool
 	inTotal       int
 	outTotal      int
 }
@@ -88,8 +92,8 @@ func (u *UI) SetModels(refs []string) {
 // Zero disables the context line.
 func (u *UI) SetContextWindow(n int) { u.contextWindow = n }
 
-// SetModel supplies the current model label shown at the right of the token
-// footer. Empty hides it.
+// SetModel supplies the model label shown before the prompt marker. Empty
+// leaves the marker bare.
 func (u *UI) SetModel(label string) { u.model = label }
 
 // UsageTotals returns the accumulated input and output tokens for the session.
@@ -138,12 +142,13 @@ func (u *UI) Render(ev event.Event) {
 		if ev.Usage != nil {
 			u.inTotal += ev.Usage.InputTokens
 			u.outTotal += ev.Usage.OutputTokens
-			fmt.Fprintln(u.out, u.styles.dim.Render(u.footer(ev.Usage)))
+			fmt.Fprintln(u.out, u.styles.dim.Render(u.usageLine(ev.Usage)))
 		}
 	case event.Notice:
 		fmt.Fprintln(u.out, u.styles.dim.Render("· "+ev.Text))
 	case event.Error:
 		u.flushMarkdown()
+		u.failed = true
 		fmt.Fprintln(u.errOut, u.styles.err.Render("error: "+ev.Err.Error()))
 	}
 }
@@ -158,22 +163,25 @@ func (u *UI) Banner(text string) {
 	fmt.Fprintln(u.out)
 }
 
-// footer is the token line with the model label pushed to the right edge. On a
-// terminal it pads with spaces; otherwise the label is appended after the
-// token info so piped output stays free of trailing whitespace.
-func (u *UI) footer(usage *llm.Usage) string {
-	line := u.usageLine(usage)
-	if u.model == "" {
-		return line
+// prompt renders the primary prompt for the line currently being edited. The
+// label is the model, or "!" while the line starts with a shell escape; the
+// marker is accent-colored, yellow in shell mode, and red after a failed turn.
+// Any other prompt is returned unchanged.
+func (u *UI) prompt(base, current string) string {
+	if base != MainPrompt {
+		return base
 	}
-	if u.editor == nil || u.width <= 0 {
-		return line + "  " + u.model
+	label, marker := u.model, u.styles.prompt
+	switch {
+	case strings.HasPrefix(current, "!"):
+		label, marker = "!", u.styles.shell
+	case u.failed:
+		marker = u.styles.err
 	}
-	pad := u.width - utf8.RuneCountInString(line) - utf8.RuneCountInString(u.model)
-	if pad < 2 {
-		return line + "  " + u.model
+	if label == "" {
+		return marker.Render(">") + " "
 	}
-	return line + strings.Repeat(" ", pad) + u.model
+	return label + " " + marker.Render(">") + " "
 }
 
 // usageLine formats the per-turn token footer. When the model's context window

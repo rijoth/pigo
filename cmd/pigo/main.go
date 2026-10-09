@@ -204,7 +204,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		u.Render(event.Event{Kind: event.Notice, Text: "model: " + label})
 	}
 	for {
-		line, err := u.ReadLine("> ")
+		line, err := u.ReadLine(ui.MainPrompt)
 		if errors.Is(err, ui.ErrInterrupt) {
 			fmt.Fprintln(os.Stdout)
 			return 0

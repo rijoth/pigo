@@ -356,7 +356,7 @@ sessions stay readable.
 
 All terminal concerns live here and only here.
 
-**Input:** a readline library (`github.com/chzyer/readline` or `github.com/reeflective/readline`; pick one and hide it behind `ui.ReadLine(prompt) (string, error)`). Requirements: history (persisted to a file in the state dir), Ctrl+C clears the line, Ctrl+D exits on empty input, multi-line input via a trailing backslash or a `"""` fence.
+**Input:** a readline library (`github.com/chzyer/readline` or `github.com/reeflective/readline`; pick one and hide it behind `ui.ReadLine(prompt) (string, error)`). Requirements: history (persisted to a file in the state dir), Ctrl+C clears the line, Ctrl+D exits on empty input, multi-line input via a trailing backslash or a `"""` fence. The primary prompt is built by the UI: the model label sits before the `>` marker, which turns yellow while the line starts with `!` and red after a failed turn.
 
 **Output:** `ui.Render(event.Event)` is the single entry point that the agent's `emit` callback calls.
 
@@ -365,7 +365,7 @@ All terminal concerns live here and only here.
 | `TextDelta` | Streamed to stdout (see below). |
 | `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). |
 | `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. Full output still goes to the model. |
-| `TurnEnd` | Blank line; optional dim token usage footer, with the model label aligned to the right edge. |
+| `TurnEnd` | Blank line; optional dim token usage footer. |
 | `Notice` | Dim italic line. |
 | `Error` | Red line to **stderr**. |
 

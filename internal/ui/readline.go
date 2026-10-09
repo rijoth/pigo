@@ -119,7 +119,8 @@ func demeta(s string) string {
 // readEditorLine reads one logical line; a trailing backslash continues it.
 func (u *UI) readEditorLine(prompt string) (string, error) {
 	e := u.editor
-	e.rl.Prompt.Primary(func() string { return prompt })
+	e.rl.Prompt.Primary(func() string { return u.prompt(prompt, string(*e.rl.Line())) })
+	defer func() { u.failed = false }()
 	var lines []string
 	for {
 		line, err := e.rl.Readline()
