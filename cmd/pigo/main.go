@@ -319,7 +319,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				}
 				continue
 			case "tree":
-				navigateTree(ag, sess, u, &history, &ids, &lastInput, strings.TrimSpace(arg))
+				navigateTree(ag, sess, u, &history, &ids, &lastInput, banner(modelLabel), strings.TrimSpace(arg))
 				continue
 			case "session":
 				printSession(os.Stdout, sess, len(history), u, contextWindow)
@@ -427,8 +427,10 @@ func printSession(w io.Writer, sess *session.Session, messages int, u *ui.UI, co
 
 // navigateTree shows the session tree, switches the active branch to the
 // chosen entry, and optionally summarizes the abandoned branch. With an
-// argument (a 1-based number or an entry id prefix) it switches directly.
-func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]llm.Message, ids *[]string, lastInput *int, arg string) {
+// argument (a 1-based number or an entry id prefix) it switches directly. The
+// screen is cleared and the new branch replayed, as /resume does, so the old
+// branch's turns do not linger on screen after the switch.
+func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]llm.Message, ids *[]string, lastInput *int, header, arg string) {
 	t, err := sess.Tree()
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
@@ -496,7 +498,12 @@ func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]l
 		}
 	}
 	*history, *ids, *lastInput = newHistory, newIDs, 0
-	u.Render(event.Event{Kind: event.Notice, Text: fmt.Sprintf("switched branch: %d messages in context, ending at %s", len(newHistory), entryLabel(entries, sess.Leaf()))})
+	if u.Interactive() {
+		// Clear erases the branch just left; Restore replays the chosen branch
+		// so the display matches the context supplied to the next request.
+		u.Restore(header, newHistory)
+	}
+	u.Render(event.Event{Kind: event.Notice, Text: fmt.Sprintf("switched branch: %d messages in context, ending at %s", len(newHistory), entryLabel(entries, id))})
 }
 
 // matchEntry resolves a /tree argument to an entry id: a 1-based number or a
