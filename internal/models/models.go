@@ -81,34 +81,34 @@ var BuiltinModels = []ModelEntry{
 	{Provider: "opencode-go", Model: "glm-5.2", Name: "GLM-5.2 (OpenCode Go)", BaseURL: "https://opencode.ai/zen/go/v1", API: "openai-completions"},
 }
 
-// agentDir returns Pi's agent directory, honoring the same override as Pi:
-// PI_CODING_AGENT_DIR, else ~/.pi/agent.
-func agentDir() string {
-	dir := os.Getenv("PI_CODING_AGENT_DIR")
+// configDir returns pigo's config directory, $XDG_CONFIG_HOME/pigo or
+// ~/.config/pigo, the same directory that holds auth.json and skills.
+func configDir() string {
+	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return ""
 		}
-		dir = filepath.Join(home, ".pi", "agent")
+		dir = filepath.Join(home, ".config")
 	}
-	return dir
+	return filepath.Join(dir, "pigo")
 }
 
-// ModelsPath returns the path to Pi's models.json.
+// ModelsPath returns the path to pigo's models.json.
 func ModelsPath() string {
-	dir := agentDir()
+	dir := configDir()
 	if dir == "" {
 		return ""
 	}
 	return filepath.Join(dir, "models.json")
 }
 
-// ModelsStorePath returns the path to Pi's models-store.json, the cached
-// provider catalog Pi writes when it refreshes a provider's model list. It
+// ModelsStorePath returns the path to pigo's models-store.json, the cached
+// provider catalog written when a provider's model list is refreshed. It
 // lives beside models.json and is keyed by provider id.
 func ModelsStorePath() string {
-	dir := agentDir()
+	dir := configDir()
 	if dir == "" {
 		return ""
 	}

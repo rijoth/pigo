@@ -41,14 +41,18 @@ func TestResolveKeyNoSources(t *testing.T) {
 
 func TestProvidersMerge(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "models.json"), []byte(`{
+	pigoDir := filepath.Join(dir, "pigo")
+	if err := os.MkdirAll(pigoDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pigoDir, "models.json"), []byte(`{
 	  "providers": {
 	    "nanogpt": {"apiKey": "$NANO_KEY", "models": [{"id": "qwen"}]}
 	  }
 	}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PI_CODING_AGENT_DIR", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
 
 	ps := Providers()
 	ids := make(map[string]ProviderInfo, len(ps))

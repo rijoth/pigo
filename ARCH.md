@@ -203,9 +203,10 @@ type Provider interface {
 
 - `llm/llm.go`: the types above and the `Provider` interface, nothing else.
 - `llm/dummy.go`: the no-model provider.
-- `models/models.go`: Pi's `models.json`/`models-store.json` catalog, `ModelEntry`,
+- `models/models.go`: pigo's `models.json`/`models-store.json` catalog, `ModelEntry`,
   `AvailableModels`, `Find`, `ContextWindow`, and models.json key/header
-  interpolation.
+  interpolation. Both files live in pigo's config dir
+  (`$XDG_CONFIG_HOME/pigo`, default `~/.config/pigo`).
 - `providers/providers.go`: the provider list, standard env vars, credential
   resolution (`ResolveKey`), and `AuthenticatedModels`.
 - `fantasy/fantasy.go`: `NewFantasy`, `NewFantasyEntry`, `NewFromRef`, and
@@ -404,11 +405,12 @@ The provider and model pickers share one selector. On a terminal narrower than a
 small threshold it falls back to a numbered prompt instead of the raw arrow-key
 list.
 
-The model picker lists `provider/model` refs from Pi's `models.json` and its
-cached provider catalog `models-store.json`, merged with the built-in defaults
-and filtered to providers with a usable key (auth.json, the provider env var,
-or a `models.json` `apiKey`). It is an in-place raw-terminal list: type to
-filter, Up/Down to move, Enter to select, Esc to cancel. The list is rebuilt
+The model picker lists `provider/model` refs from pigo's `models.json`
+(`$XDG_CONFIG_HOME/pigo/models.json`, default `~/.config/pigo/models.json`) and
+its cached provider catalog `models-store.json`, merged with the built-in
+defaults and filtered to providers with a usable key (auth.json, the provider
+env var, or a `models.json` `apiKey`). It is an in-place raw-terminal list:
+type to filter, Up/Down to move, Enter to select, Esc to cancel. The list is rebuilt
 when `/model` opens and after `/login`, so a new credential shows its models.
 The selected ref is remembered in `$XDG_STATE_HOME/pigo/model` (default
 `~/.local/state/pigo/model`) and restored on the next start, unless `-m`,

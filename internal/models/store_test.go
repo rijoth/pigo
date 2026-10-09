@@ -10,8 +10,12 @@ import (
 // merged in, with models.json winning on a duplicate ref.
 func TestAvailableModelsMergesStore(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PI_CODING_AGENT_DIR", dir)
-	os.WriteFile(filepath.Join(dir, "models.json"), []byte(`{
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	pigoDir := filepath.Join(dir, "pigo")
+	if err := os.MkdirAll(pigoDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(pigoDir, "models.json"), []byte(`{
 	  "providers": {
 	    "opencode": {
 	      "baseUrl": "https://example.test/user",
@@ -19,7 +23,7 @@ func TestAvailableModelsMergesStore(t *testing.T) {
 	    }
 	  }
 	}`), 0o600)
-	os.WriteFile(filepath.Join(dir, "models-store.json"), []byte(`{
+	os.WriteFile(filepath.Join(pigoDir, "models-store.json"), []byte(`{
 	  "opencode": {
 	    "models": [
 	      {"id": "glm-5.2", "name": "Store GLM", "baseUrl": "https://opencode.ai/zen/v1"},
@@ -58,7 +62,7 @@ func TestLoadModelsStoreMissing(t *testing.T) {
 
 // TestBuiltinOpenCodeGo checks the opencode-go default carries its endpoint.
 func TestBuiltinOpenCodeGo(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	e, ok := Find(AvailableModels(), "opencode-go/glm-5.2")
 	if !ok || e.BaseURL != "https://opencode.ai/zen/go/v1" || e.API != "openai-completions" {
 		t.Fatalf("opencode-go/glm-5.2 = %+v ok = %v", e, ok)

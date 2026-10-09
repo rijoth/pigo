@@ -8,8 +8,12 @@ import (
 
 func TestAvailableModelsMergesBuiltins(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PI_CODING_AGENT_DIR", dir)
-	os.WriteFile(filepath.Join(dir, "models.json"), []byte(`{
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	pigoDir := filepath.Join(dir, "pigo")
+	if err := os.MkdirAll(pigoDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(pigoDir, "models.json"), []byte(`{
 	  "providers": {
 	    "anthropic": {
 	      "models": [{"id": "claude-sonnet-4-5", "name": "Custom Sonnet", "baseUrl": "http://example.test"}]
@@ -54,7 +58,7 @@ func TestAvailableModelsMergesBuiltins(t *testing.T) {
 }
 
 func TestAvailableModelsBuiltinsOnly(t *testing.T) {
-	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	models := AvailableModels()
 	if len(models) != len(BuiltinModels) {
 		t.Fatalf("got %d models, want %d built-ins", len(models), len(BuiltinModels))
