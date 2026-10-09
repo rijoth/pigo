@@ -61,3 +61,21 @@ func TestClearNoopWhenNotInteractive(t *testing.T) {
 		t.Fatalf("Clear wrote %q", b.String())
 	}
 }
+
+// TestBannerFramesWithRules checks the startup summary sits between two
+// terminal-width horizontal rules.
+func TestBannerFramesWithRules(t *testing.T) {
+	u, b := newTestUI()
+	u.Banner("PiGo test")
+	rules := strings.Split(b.String(), "\n")
+	if len(rules) < 6 || rules[0] != "" {
+		t.Fatalf("expected a leading blank line:\n%q", b.String())
+	}
+	want := strings.Repeat("─", 60)
+	if rules[1] != want || rules[5] != want {
+		t.Fatalf("rules not framing banner:\n%q", b.String())
+	}
+	if rules[3] != "PiGo test" {
+		t.Fatalf("banner text = %q", rules[3])
+	}
+}

@@ -155,12 +155,25 @@ func (u *UI) Render(ev event.Event) {
 
 func (u *UI) write(s string) { fmt.Fprint(u.out, s) }
 
-// Banner prints a leading blank line then a dim multi-line block. It is used
-// for the startup summary so sections do not get the notice bullet prefix.
+// Banner prints the startup summary as a dim multi-line block framed by dim
+// horizontal rules, so sections do not get the notice bullet prefix.
 func (u *UI) Banner(text string) {
+	fmt.Fprintln(u.out)
+	fmt.Fprintln(u.out, u.styles.dim.Render(u.rule()))
 	fmt.Fprintln(u.out)
 	fmt.Fprintln(u.out, u.styles.dim.Render(text))
 	fmt.Fprintln(u.out)
+	fmt.Fprintln(u.out, u.styles.dim.Render(u.rule()))
+	fmt.Fprintln(u.out)
+}
+
+// rule returns a line of box-drawing characters spanning the terminal width.
+func (u *UI) rule() string {
+	w := u.width
+	if w < 1 {
+		w = 80
+	}
+	return strings.Repeat("─", w)
 }
 
 // Clear erases the screen and moves the cursor home. It is a no-op when the
