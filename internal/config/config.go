@@ -30,8 +30,6 @@ const (
 // fallback for terminals whose font lacks braille (Termux).
 const (
 	ShowSpinner        = true
-	SpinnerLabel       = "Thinking…"
-	SpinnerToolLabel   = "running…"
 	SpinnerFrames      = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 	SpinnerASCIIFrames = "|/-\\"
 	SpinnerIntervalMs  = 100

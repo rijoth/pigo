@@ -120,7 +120,7 @@ func run() int {
 		ag.Approve = func(call llm.ToolCall) bool {
 			u.StopSpinner()
 			ok := u.Confirm(call.Name, call.Args)
-			u.StartSpinner(config.SpinnerToolLabel)
+			u.StartSpinner()
 			return ok
 		}
 	}
@@ -210,9 +210,9 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		// Restart once a tool finishes; the model is thinking again.
 		switch ev.Kind {
 		case event.ToolStart:
-			u.StartSpinner(config.SpinnerToolLabel)
+			u.StartSpinner()
 		case event.ToolResult, event.Notice:
-			u.StartSpinner(config.SpinnerLabel)
+			u.StartSpinner()
 		}
 	}
 	// switchModel resolves ref against models.json plus built-ins and points
@@ -365,7 +365,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		}
 		n := len(history)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		u.StartSpinner(config.SpinnerLabel)
+		u.StartSpinner()
 		newHistory, err := ag.Run(ctx, history, line, emit)
 		u.StopSpinner()
 		stop()
@@ -499,7 +499,7 @@ func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]l
 	}
 	if abandoned := t.Abandoned(oldLeaf, id); len(abandoned) > 0 && u.Ask(fmt.Sprintf("summarize the %d messages you are leaving?", len(abandoned))) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		u.StartSpinner(config.SpinnerLabel)
+		u.StartSpinner()
 		summary, sumErr := agent.Summarize(ctx, ag.Provider, ag.System, abandoned)
 		u.StopSpinner()
 		stop()
@@ -600,7 +600,7 @@ func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids
 func compact(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, instructions string) ([]llm.Message, []string, bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	u.StartSpinner(config.SpinnerLabel)
+	u.StartSpinner()
 	newHistory, summary, cut, err := agent.Compact(ctx, ag.Provider, ag.System, history, config.KeepRecentMsgs, instructions)
 	u.StopSpinner()
 	if err != nil {

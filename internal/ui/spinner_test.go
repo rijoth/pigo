@@ -11,8 +11,8 @@ import (
 func TestSpinnerStartStopIdempotent(t *testing.T) {
 	var b bytes.Buffer
 	s := newSpinner(&b, true, newStyles(true), true)
-	s.Start("Thinking…")
-	s.Start("Thinking…")
+	s.Start()
+	s.Start()
 	s.Stop()
 	s.Stop()
 	out := b.String()
@@ -22,8 +22,8 @@ func TestSpinnerStartStopIdempotent(t *testing.T) {
 	if n := strings.Count(out, showCursor); n != 1 {
 		t.Fatalf("show cursor written %d times, want 1:\n%q", n, out)
 	}
-	if !strings.Contains(out, "Thinking") {
-		t.Fatalf("label missing:\n%q", out)
+	if !strings.Contains(out, "0s") {
+		t.Fatalf("elapsed seconds missing:\n%q", out)
 	}
 }
 
@@ -32,14 +32,14 @@ func TestSpinnerStartStopIdempotent(t *testing.T) {
 func TestSpinnerNonTTYNoAnimation(t *testing.T) {
 	var b bytes.Buffer
 	s := newSpinner(&b, false, newStyles(false), true)
-	s.Start("Thinking…")
-	s.Start("Thinking…")
+	s.Start()
+	s.Start()
 	s.Stop()
 	out := b.String()
 	if strings.Contains(out, "\x1b") {
 		t.Fatalf("non-TTY spinner wrote ANSI:\n%q", out)
 	}
-	if n := strings.Count(out, "Thinking"); n != 1 {
+	if n := strings.Count(out, "0s"); n != 1 {
 		t.Fatalf("static line written %d times, want 1:\n%q", n, out)
 	}
 }
@@ -49,9 +49,9 @@ func TestSpinnerNonTTYNoAnimation(t *testing.T) {
 func TestSpinnerDisabledQuiet(t *testing.T) {
 	var b bytes.Buffer
 	u := &UI{spin: newSpinner(&b, true, newStyles(false), true)}
-	u.StartSpinner("Thinking…")
+	u.StartSpinner()
 	u.DisableSpinner()
-	u.StartSpinner("Thinking…") // no-op after disable
+	u.StartSpinner() // no-op after disable
 	out := b.String()
 	if n := strings.Count(out, hideCursor); n != 1 {
 		t.Fatalf("hide cursor written %d times, want 1:\n%q", n, out)

@@ -30,7 +30,6 @@ type spinner struct {
 
 	mu      sync.Mutex
 	running bool
-	label   string
 	start   time.Time
 	stopc   chan struct{}
 	donec   chan struct{}
@@ -45,9 +44,9 @@ func newSpinner(out io.Writer, anim bool, st styles, ascii bool) *spinner {
 // lack braille, so the environment opts in.
 func spinnerASCII() bool { return os.Getenv("TERMUX_VERSION") != "" }
 
-// StartSpinner shows the activity line with label. It is a no-op when the
-// spinner is disabled.
-func (u *UI) StartSpinner(label string) { u.spin.Start(label) }
+// StartSpinner shows the activity line. It is a no-op when the spinner is
+// disabled.
+func (u *UI) StartSpinner() { u.spin.Start() }
 
 // StopSpinner clears the activity line and waits for the renderer. It is safe
 // to call when no spinner is running.
@@ -62,7 +61,7 @@ func (u *UI) DisableSpinner() {
 
 // Start shows the spinner. Calling Start while it runs is a no-op, so a
 // repeated request cannot spawn a second ticker.
-func (s *spinner) Start(label string) {
+func (s *spinner) Start() {
 	if s == nil {
 		return
 	}
@@ -72,7 +71,6 @@ func (s *spinner) Start(label string) {
 		return
 	}
 	s.running = true
-	s.label = label
 	s.start = time.Now()
 	if !s.anim {
 		s.mu.Unlock()
@@ -135,10 +133,10 @@ func (s *spinner) frames() []rune {
 	return []rune(config.SpinnerFrames)
 }
 
-// line formats the glyph, label, and elapsed seconds. The glyph carries the
-// accent color; the rest is dim.
+// line formats the glyph and elapsed seconds. The glyph carries the accent
+// color; the elapsed time is dim.
 func (s *spinner) line(frame rune) string {
 	elapsed := int(time.Since(s.start).Seconds())
 	return s.styles.prompt.Render(string(frame)) +
-		s.styles.dim.Render(fmt.Sprintf(" %s %ds", s.label, elapsed))
+		s.styles.dim.Render(fmt.Sprintf(" %ds", elapsed))
 }
