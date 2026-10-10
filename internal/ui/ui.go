@@ -41,6 +41,7 @@ type UI struct {
 	editor  *lineEditor
 	scanner *bufio.Scanner
 	models  []string
+	spin    *spinner
 
 	lastCall   *llm.ToolCall
 	lastResult *llm.ToolResult
@@ -68,6 +69,11 @@ func New(out, errOut *os.File, historyFile string) *UI {
 		narrow: width < config.NarrowWidth,
 		width:  width,
 		styles: newStyles(color),
+	}
+	if config.ShowSpinner {
+		// Animate only on a styled terminal; stderr may differ from stdout.
+		anim := isTerminal(errOut) && os.Getenv("NO_COLOR") == ""
+		u.spin = newSpinner(errOut, anim, newStyles(anim), spinnerASCII())
 	}
 	if !raw {
 		u.md = markdown.NewRenderer(width, color, u.narrow, func(s string) string { return u.styles.label.Render(s) }, u.write)
@@ -107,8 +113,9 @@ func (u *UI) UsageTotals() (int, int) { return u.inTotal, u.outTotal }
 // Interactive reports whether the UI can prompt on a terminal.
 func (u *UI) Interactive() bool { return u.editor != nil }
 
-// Close releases the line editor.
+// Close releases the line editor and stops any activity spinner.
 func (u *UI) Close() {
+	u.StopSpinner()
 	if u.editor != nil {
 		u.editor.Close()
 	}
@@ -117,11 +124,14 @@ func (u *UI) Close() {
 // Interrupt flushes any buffered markdown and resets styles after Ctrl+C, so a
 // cancelled stream never leaves a half-open ANSI sequence on screen.
 func (u *UI) Interrupt() {
+	u.StopSpinner()
 	u.flushMarkdown()
 }
 
-// Render is the single entry point for agent events.
+// Render is the single entry point for agent events. It stops the spinner
+// first so a frame can never interleave with normal output.
 func (u *UI) Render(ev event.Event) {
+	u.StopSpinner()
 	switch ev.Kind {
 	case event.TextDelta:
 		if u.raw {

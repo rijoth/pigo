@@ -26,6 +26,17 @@ const (
 	DefaultModel    = "" // empty: require PIGO_MODEL or -m
 )
 
+// Activity spinner. SpinnerFrames is braille; SpinnerASCIIFrames is the
+// fallback for terminals whose font lacks braille (Termux).
+const (
+	ShowSpinner        = true
+	SpinnerLabel       = "Thinking…"
+	SpinnerToolLabel   = "running…"
+	SpinnerFrames      = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+	SpinnerASCIIFrames = "|/-\\"
+	SpinnerIntervalMs  = 100
+)
+
 // SystemPrompt is the base instruction given to the model each turn.
 const SystemPrompt = `You are pigo, a terminal coding agent. Help the user with software engineering
 tasks in their working directory.

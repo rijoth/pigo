@@ -82,6 +82,9 @@ func run() int {
 
 	u := ui.New(os.Stdout, os.Stderr, filepath.Join(state, "history"))
 	defer u.Close()
+	if *prompt != "" {
+		u.DisableSpinner() // -p: keep stderr quiet for scripts
+	}
 	u.SetModels(pickerRefs())
 	u.SetContextWindow(models.ContextWindow(modelLabel))
 	u.SetModel(modelLabel)
@@ -114,7 +117,12 @@ func run() int {
 		RetryMax:   time.Duration(config.RetryMaxMs) * time.Millisecond,
 	}
 	if *confirm {
-		ag.Approve = func(call llm.ToolCall) bool { return u.Confirm(call.Name, call.Args) }
+		ag.Approve = func(call llm.ToolCall) bool {
+			u.StopSpinner()
+			ok := u.Confirm(call.Name, call.Args)
+			u.StartSpinner(config.SpinnerToolLabel)
+			return ok
+		}
 	}
 
 	if *prompt != "" {
@@ -198,6 +206,13 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		u.Render(ev)
 		if ev.Kind == event.TurnEnd && ev.Usage != nil {
 			lastInput = ev.Usage.InputTokens
+		}
+		// Restart once a tool finishes; the model is thinking again.
+		switch ev.Kind {
+		case event.ToolStart:
+			u.StartSpinner(config.SpinnerToolLabel)
+		case event.ToolResult, event.Notice:
+			u.StartSpinner(config.SpinnerLabel)
 		}
 	}
 	// switchModel resolves ref against models.json plus built-ins and points
@@ -350,7 +365,9 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		}
 		n := len(history)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		u.StartSpinner(config.SpinnerLabel)
 		newHistory, err := ag.Run(ctx, history, line, emit)
+		u.StopSpinner()
 		stop()
 		if ctx.Err() != nil {
 			u.Interrupt()
@@ -482,7 +499,9 @@ func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]l
 	}
 	if abandoned := t.Abandoned(oldLeaf, id); len(abandoned) > 0 && u.Ask(fmt.Sprintf("summarize the %d messages you are leaving?", len(abandoned))) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		u.StartSpinner(config.SpinnerLabel)
 		summary, sumErr := agent.Summarize(ctx, ag.Provider, ag.System, abandoned)
+		u.StopSpinner()
 		stop()
 		switch {
 		case sumErr != nil:
@@ -581,7 +600,9 @@ func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids
 func compact(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, instructions string) ([]llm.Message, []string, bool) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	u.StartSpinner(config.SpinnerLabel)
 	newHistory, summary, cut, err := agent.Compact(ctx, ag.Provider, ag.System, history, config.KeepRecentMsgs, instructions)
+	u.StopSpinner()
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
 		return history, ids, false
