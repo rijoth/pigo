@@ -1,4 +1,5 @@
-// Package diff renders small unified diffs for tool output.
+// Package diff renders small unified diffs for tool output and previews the
+// change an edit or write would make before it runs.
 package diff
 
 import (
@@ -160,6 +161,33 @@ func SplitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
+}
+
+// EditPreview returns the pre-edit and post-edit line slices for replacing old
+// with new in the file at path, without modifying it. ok is false when the
+// file cannot be read or old does not occur exactly once, matching the edit
+// tool's contract.
+func EditPreview(path, old, new string) (pre, post []string, ok bool) {
+	data, err := os.ReadFile(path)
+	if err != nil || old == "" || strings.Count(string(data), old) != 1 {
+		return nil, nil, false
+	}
+	content := string(data)
+	return SplitLines(content), SplitLines(strings.Replace(content, old, new, 1)), true
+}
+
+// WritePreview returns the current file contents and the content that would be
+// written, as line slices. A missing file yields an empty pre slice. ok is
+// false when the path is empty or the file cannot be read for another reason.
+func WritePreview(path, content string) (pre, post []string, ok bool) {
+	if path == "" {
+		return nil, nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, nil, false
+	}
+	return SplitLines(string(data)), SplitLines(content), true
 }
 
 // Hunk reconstructs the pre-edit and post-edit line slices from the file on

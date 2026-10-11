@@ -45,6 +45,7 @@ type UI struct {
 
 	lastCall   *llm.ToolCall
 	lastResult *llm.ToolResult
+	diffs      map[string][]string // full change previews by call id, for /expand
 
 	contextWindow int
 	model         string
@@ -207,6 +208,7 @@ func (u *UI) Clear() {
 // results are printed in order.
 func (u *UI) Restore(header string, history []llm.Message) {
 	u.Clear()
+	u.diffs = nil // previews from the branch being replaced no longer apply
 	if header != "" {
 		u.Banner(header)
 	}

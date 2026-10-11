@@ -19,13 +19,53 @@ func (u *UI) indent() string {
 	return "  "
 }
 
-// renderToolStart prints a compact one-line header for a tool call.
+// renderToolStart prints a compact one-line header for a tool call, followed by
+// a preview of the change an edit or write would make.
 func (u *UI) renderToolStart(call *llm.ToolCall) {
 	if call == nil {
 		return
 	}
 	u.flushMarkdown()
 	u.write(u.styles.header.Render(u.toolHeader(call)) + "\n")
+	if lines := u.preview(call); lines != nil {
+		if u.diffs == nil {
+			u.diffs = map[string][]string{}
+		}
+		u.diffs[call.ID] = lines
+		for _, line := range limitLines(lines, config.UIDiffLines) {
+			u.write(u.colorDiffLine(line) + "\n")
+		}
+	}
+}
+
+// preview returns the unified diff an edit or write call would produce, computed
+// without running the tool. It returns nil for other tools or when no diff is
+// available.
+func (u *UI) preview(call *llm.ToolCall) []string {
+	var pre, post []string
+	var ok bool
+	switch call.Name {
+	case "edit":
+		pre, post, ok = diff.EditPreview(argString(call.Args, "path"), argString(call.Args, "old"), argString(call.Args, "new"))
+	case "write":
+		pre, post, ok = diff.WritePreview(argString(call.Args, "path"), argString(call.Args, "content"))
+	default:
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	return diff.Format(pre, post, 3)
+}
+
+// limitLines caps a preview at max lines and marks the hidden remainder.
+func limitLines(lines []string, max int) []string {
+	if len(lines) <= max {
+		return lines
+	}
+	out := make([]string, 0, max+1)
+	out = append(out, lines[:max]...)
+	return append(out, fmt.Sprintf("… (+%d more lines)", len(lines)-max))
 }
 
 func (u *UI) toolHeader(call *llm.ToolCall) string {
@@ -85,8 +125,18 @@ func (u *UI) renderToolResult(call *llm.ToolCall, res *llm.ToolResult, full bool
 	}
 }
 
-// Expand prints the last tool result without truncation.
+// Expand prints the last tool result without truncation. A change preview is
+// reprinted in full when one was captured for the last call.
 func (u *UI) Expand() {
+	if u.lastCall != nil {
+		if lines := u.diffs[u.lastCall.ID]; len(lines) > 0 {
+			for _, line := range lines {
+				u.write(u.colorDiffLine(line) + "\n")
+			}
+			delete(u.diffs, u.lastCall.ID)
+			return
+		}
+	}
 	if u.lastResult == nil {
 		u.write(u.styles.dim.Render("nothing to expand") + "\n")
 		return
@@ -147,11 +197,15 @@ func (u *UI) renderWrite(res *llm.ToolResult) {
 	u.write(style.Render(u.indent()+firstLine(res.Content)) + "\n")
 }
 
-// renderEdit draws the edit as a unified diff. Context lines come from the
-// file on disk so the hunk shows what surrounds the change.
+// renderEdit reports an edit result. The diff was already shown as a preview;
+// a replay with no stored preview (a resumed session) reconstructs it from disk.
 func (u *UI) renderEdit(call *llm.ToolCall, res *llm.ToolResult) {
 	if res.IsError {
 		u.write(u.styles.err.Render(u.indent()+firstLine(res.Content)) + "\n")
+		return
+	}
+	if call != nil && len(u.diffs[call.ID]) > 0 {
+		u.write(u.styles.dim.Render(u.indent()+firstLine(res.Content)) + "\n")
 		return
 	}
 	path := ""

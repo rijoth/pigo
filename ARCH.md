@@ -371,8 +371,8 @@ All terminal concerns live here and only here.
 | Event | Rendering |
 |-------|-----------|
 | `TextDelta` | Streamed to stdout (see below). |
-| `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). |
-| `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. Full output still goes to the model. |
+| `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). For `edit` and `write`, a unified diff preview of the pending change follows, computed without running the tool and capped by `UIDiffLines`. |
+| `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. `edit` and `write` show a one-line status instead of repeating the preview. Full output still goes to the model. `/expand` reprints an untruncated preview. |
 | `TurnEnd` | Blank line; optional dim token usage footer. |
 | `Notice` | Dim italic line. |
 | `Error` | Red line to **stderr**. |
@@ -464,6 +464,7 @@ const (
     CompactAtTokens = 120_000
     KeepRecentMsgs  = 8
     UIToolLines     = 8
+    UIDiffLines     = 20
     RenderMode      = "block" // "block" or "raw"
     DefaultProvider = "anthropic"
     DefaultModel    = "" // empty: require PIGO_MODEL or -m
