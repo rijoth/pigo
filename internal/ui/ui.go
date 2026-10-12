@@ -104,13 +104,15 @@ func (u *UI) SetModels(refs []string) {
 // Zero disables the context line.
 func (u *UI) SetContextWindow(n int) { u.contextWindow = n }
 
-// Thinking reports whether reasoning blocks are shown.
+// Thinking reports whether reasoning blocks are rendered expanded. When off
+// they render collapsed: one line with a short preview.
 func (u *UI) Thinking() bool { return u.showThinking }
 
-// SetThinking shows or hides reasoning blocks.
+// SetThinking expands (on) or collapses (off) reasoning blocks.
 func (u *UI) SetThinking(on bool) { u.showThinking = on }
 
-// ToggleThinking flips reasoning-block visibility and returns the new state.
+// ToggleThinking flips between expanded and collapsed reasoning blocks and
+// returns the new state.
 func (u *UI) ToggleThinking() bool {
 	u.showThinking = !u.showThinking
 	return u.showThinking
@@ -266,18 +268,35 @@ func (u *UI) Restore(header string, history []llm.Message) {
 	u.flushMarkdown()
 }
 
-// renderThinking prints one reasoning block, dim and italic with a marker on
-// the first line. It is a no-op when thinking is hidden or output is piped.
+// renderThinking prints one reasoning block. Expanded, it prints every line
+// dim and italic with a marker on the first; collapsed, it prints a single line
+// with the first-line preview and the hidden line count. A block with no
+// visible text (encrypted or signed-only reasoning) prints a placeholder, so the
+// reasoning is never silently dropped. It is a no-op when output is piped.
 func (u *UI) renderThinking(text string) {
-	if !u.showThinking || u.raw || strings.TrimSpace(text) == "" {
+	if u.raw {
 		return
 	}
-	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+	body := strings.TrimRight(text, "\n")
+	if strings.TrimSpace(body) == "" {
+		u.write(u.styles.thinking.Render("✻ thinking (encrypted)") + "\n")
+		return
+	}
+	lines := strings.Split(body, "\n")
+	if !u.showThinking {
+		head := u.styles.thinking.Render("✻ " + truncateLine(firstLine(body), u.width-4))
+		if n := len(lines) - 1; n > 0 {
+			head += u.styles.dim.Render(fmt.Sprintf("  … (+%d more lines)", n))
+		}
+		u.write(head + "\n")
+		return
+	}
+	for i, line := range lines {
 		prefix := "  "
 		if i == 0 {
 			prefix = "✻ "
 		}
-		fmt.Fprintln(u.out, u.styles.thinking.Render(prefix+line))
+		u.write(u.styles.thinking.Render(prefix+line) + "\n")
 	}
 }
 

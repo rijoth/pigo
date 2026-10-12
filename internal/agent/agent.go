@@ -109,9 +109,7 @@ func (a *Agent) streamWithRetry(ctx context.Context, req llm.Request, emit func(
 				case d.Reasoning != nil:
 					observable = true
 					assistant.Reasoning = append(assistant.Reasoning, *d.Reasoning)
-					if d.Reasoning.Text != "" {
-						emit(event.Event{Kind: event.ThinkingDelta, Text: d.Reasoning.Text})
-					}
+					emit(event.Event{Kind: event.ThinkingDelta, Text: d.Reasoning.Text})
 				case d.Call != nil:
 					observable = true
 					assistant.Calls = append(assistant.Calls, *d.Call)

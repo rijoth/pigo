@@ -97,6 +97,29 @@ func TestRunReasoning(t *testing.T) {
 	}
 }
 
+// TestRunReasoningRedacted checks that a signed reasoning block with no visible
+// text (encrypted) still produces a ThinkingDelta, so the UI can show it.
+func TestRunReasoningRedacted(t *testing.T) {
+	block := &llm.ReasoningBlock{Metadata: json.RawMessage(`{"anthropic":{}}`)}
+	p := &fakeProvider{script: [][]llm.Delta{{{Reasoning: block}, {Text: "hello"}}}}
+	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5}
+	var events []event.Event
+	history, err := a.Run(context.Background(), nil, "hi", collect(&events))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history[1].Reasoning) != 1 {
+		t.Fatalf("reasoning not stored: %+v", history)
+	}
+	var thinking bool
+	for _, e := range events {
+		thinking = thinking || e.Kind == event.ThinkingDelta
+	}
+	if !thinking {
+		t.Fatalf("missing thinking event for redacted block: %+v", events)
+	}
+}
+
 func TestRunOneToolCall(t *testing.T) {
 	p := &fakeProvider{script: [][]llm.Delta{
 		{toolCall("1", "echo"), {Usage: &llm.Usage{InputTokens: 10}}},

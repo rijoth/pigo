@@ -389,7 +389,7 @@ All terminal concerns live here and only here.
 | Event | Rendering |
 |-------|-----------|
 | `TextDelta` | Streamed to stdout (see below). |
-| `ThinkingDelta` | A completed reasoning block, rendered dim and italic. Hidden when display is toggled off (Ctrl+T) or when output is not a TTY. |
+| `ThinkingDelta` | A completed reasoning block. Expanded, it renders dim and italic; collapsed, it renders one dim line with the first-line preview and `… (+N more lines)`. Ctrl+T toggles expanded/collapsed. A block with no visible text (encrypted/signed-only) renders `✻ thinking (encrypted)`. Hidden when output is not a TTY. |
 | `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). For `edit` and `write`, a unified diff preview of the pending change follows, computed without running the tool and capped by `UIDiffLines`. |
 | `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. `edit` and `write` show a one-line status instead of repeating the preview. Full output still goes to the model. `/expand` reprints an untruncated preview. |
 | `TurnEnd` | Blank line; optional dim token usage footer. |
@@ -419,7 +419,7 @@ All terminal concerns live here and only here.
 | `/compact` | Force compaction (once implemented) |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
-| `/thinking [level]` | Set the reasoning level (clamped to the model's support); no argument prints the current level and the available ones. Shift+Tab cycles the level. The chosen level is remembered in the state dir. Ctrl+T separately toggles block display. |
+| `/thinking [level]` | Set the reasoning level (clamped to the model's support); no argument prints the current level, the expanded/collapsed state, and the available levels. Shift+Tab cycles the level. The chosen level is remembered in the state dir. Ctrl+T separately toggles whether blocks render expanded or collapsed. |
 | `/login` | List providers with a key-status marker and store an API key for the selected one. `/login <provider>` skips the list. OAuth/subscription providers report that they are unsupported. |
 | `/logout` | List providers with a stored key (an auth.json credential or a literal `apiKey` in pigo's `models.json`) and remove the selected one. Clearing the `models.json` key makes the provider stop appearing in the model picker; `$ENV` and `!command` sources are configuration and are left alone. |
 
@@ -485,7 +485,7 @@ const (
     KeepRecentMsgs  = 8
     UIToolLines     = 8
     UIDiffLines     = 20
-    ShowThinking    = true    // show reasoning blocks; Ctrl+T toggles
+    ShowThinking    = true    // render reasoning expanded; Ctrl+T collapses to one line
     DefaultThinking = "medium" // startup reasoning level
     RenderMode      = "block" // "block" or "raw"
     DefaultProvider = "anthropic"

@@ -54,15 +54,16 @@ func newLineEditor(historyFile string) *lineEditor {
 	return e
 }
 
-// toggleThinking flips reasoning-block visibility without disturbing the line
-// being edited; readline redraws the prompt below the printed notice.
+// toggleThinking flips reasoning blocks between expanded and collapsed without
+// disturbing the line being edited; readline redraws the prompt below the
+// printed notice.
 func (e *lineEditor) toggleThinking() {
 	if e.onToggleThinking == nil {
 		return
 	}
-	state := "on"
-	if !e.onToggleThinking() {
-		state = "off"
+	state := "collapsed"
+	if e.onToggleThinking() {
+		state = "expanded"
 	}
 	e.rl.Printf("thinking blocks: %s", state)
 }

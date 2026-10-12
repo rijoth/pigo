@@ -385,7 +385,11 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				ag.Thinking = thinking
 				session.SaveThinkingLevel(thinking)
 				u.SetThinkingLevel(thinking)
-				u.Render(event.Event{Kind: event.Notice, Text: "thinking: " + thinking + " (Shift+Tab cycles; available: " + strings.Join(levels, ", ") + ")"})
+				blocks := "collapsed"
+				if u.Thinking() {
+					blocks = "expanded"
+				}
+				u.Render(event.Event{Kind: event.Notice, Text: "thinking: " + thinking + " (blocks: " + blocks + ", Ctrl+T toggles; Shift+Tab cycles; available: " + strings.Join(levels, ", ") + ")"})
 				continue
 			case "expand":
 				u.Expand()
