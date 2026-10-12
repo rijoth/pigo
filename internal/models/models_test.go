@@ -122,3 +122,24 @@ func TestClearAPIKey(t *testing.T) {
 		t.Fatalf("missing file: %v", err)
 	}
 }
+
+func TestLiteralKeyProviders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "models.json")
+	os.WriteFile(path, []byte(`{
+	  "providers": {
+	    "opencode": {"apiKey": "secret", "models": [{"id": "glm"}]},
+	    "nanogpt": {"apiKey": "$NANO_KEY", "models": [{"id": "qwen"}]},
+	    "cmd": {"apiKey": "!op read k", "models": [{"id": "m"}]},
+	    "plain": {"models": [{"id": "m"}]}
+	  }
+	}`), 0o600)
+
+	got := LiteralKeyProviders(path)
+	if len(got) != 1 || got[0] != "opencode" {
+		t.Fatalf("LiteralKeyProviders = %v, want [opencode]", got)
+	}
+	if got := LiteralKeyProviders(filepath.Join(dir, "absent.json")); len(got) != 0 {
+		t.Fatalf("missing file = %v, want none", got)
+	}
+}

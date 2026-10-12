@@ -84,6 +84,13 @@ func handleLogout(u *ui.UI, authPath string, rebuild func()) {
 	for id := range creds {
 		ids = append(ids, id)
 	}
+	// A literal models.json key is also a stored credential, so offer it here
+	// even when /login never wrote an auth.json entry for the provider.
+	for _, id := range models.LiteralKeyProviders(models.ModelsPath()) {
+		if _, ok := creds[id]; !ok {
+			ids = append(ids, id)
+		}
+	}
 	sort.Strings(ids)
 	if len(ids) == 0 {
 		u.Render(event.Event{Kind: event.Notice, Text: "no stored credentials"})

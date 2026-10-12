@@ -233,6 +233,29 @@ func ClearAPIKey(path, provider string) error {
 	return writeFileAtomic(path, append(out, '\n'))
 }
 
+// LiteralKeyProviders returns the sorted ids of providers in the models.json
+// at path whose apiKey is a literal secret, the source ClearAPIKey can remove.
+// An $ENV or !command apiKey is configuration and is not reported.
+func LiteralKeyProviders(path string) []string {
+	entries, err := LoadModels(path)
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, e := range entries {
+		if seen[e.Provider] {
+			continue
+		}
+		seen[e.Provider] = true
+		if s := strings.TrimSpace(e.APIKey); s != "" && !strings.HasPrefix(s, "$") && !strings.HasPrefix(s, "!") {
+			out = append(out, e.Provider)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func writeFileAtomic(path string, b []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".models-*.tmp")
 	if err != nil {

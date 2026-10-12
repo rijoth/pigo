@@ -401,7 +401,7 @@ All terminal concerns live here and only here.
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
 | `/login` | List providers with a key-status marker and store an API key for the selected one. `/login <provider>` skips the list. OAuth/subscription providers report that they are unsupported. |
-| `/logout` | List providers with a stored key and remove the selected one. A literal `apiKey` for that provider in pigo's `models.json` is cleared too, so the provider stops appearing in the model picker; `$ENV` and `!command` sources are configuration and are left alone. |
+| `/logout` | List providers with a stored key (an auth.json credential or a literal `apiKey` in pigo's `models.json`) and remove the selected one. Clearing the `models.json` key makes the provider stop appearing in the model picker; `$ENV` and `!command` sources are configuration and are left alone. |
 
 The provider and model pickers share one selector. On a terminal narrower than a
 small threshold it falls back to a numbered prompt instead of the raw arrow-key
