@@ -8,6 +8,17 @@ Read `ARCH.md` first. Obey section 11 (rules for LLM agents working on this repo
   code, comments, docs, and commit messages. Prefer a hyphen with spaces
   (` - `) where a parenthetical break is needed.
 
+## Build
+
+After every change, rebuild the app binary before considering the work done:
+
+```sh
+make build
+```
+
+This writes `./pigo` at the repo root, which is the app you run. The binary is
+gitignored; never commit it.
+
 ## Commits
 
 Commit after every completed change. Commit intelligently, not mechanically.
