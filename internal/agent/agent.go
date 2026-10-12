@@ -203,7 +203,8 @@ func Compact(ctx context.Context, p llm.Provider, system string, history []llm.M
 	if instructions != "" {
 		text += "\n\nAdditional instructions:\n" + instructions
 	}
-	if files := touchedFiles(history); len(files) > 0 {
+	files := touchedFiles(history)
+	if len(files) > 0 {
 		text += "\n\nFiles touched this session (reference only):\n- " + strings.Join(files, "\n- ")
 	}
 	old := append([]llm.Message(nil), history[:cut]...)
@@ -215,6 +216,9 @@ func Compact(ctx context.Context, p llm.Provider, system string, history []llm.M
 	if summary == "" {
 		return history, "", 0, fmt.Errorf("compaction produced an empty summary")
 	}
+	// Persist the cumulative file list with the summary so it survives the
+	// next compaction instead of depending on the model to repeat it.
+	summary += formatFiles(files)
 	summaryMsg := llm.Message{Role: llm.RoleUser, Text: "[Earlier conversation summary]\n" + summary}
 	newHistory := append([]llm.Message{summaryMsg}, history[cut:]...)
 	return newHistory, summary, cut, nil
@@ -246,8 +250,42 @@ func summarize(ctx context.Context, p llm.Provider, system string, msgs []llm.Me
 	return strings.TrimSpace(b.String()), nil
 }
 
+// filesMarker separates the cumulative touched-file list from a summary's
+// prose. touchedFiles reads it back so file tracking survives compaction.
+const filesMarker = "[Files touched]"
+
+// formatFiles renders the touched-file list appended to a stored summary, or
+// "" when there is nothing to record.
+func formatFiles(files []string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	return "\n\n" + filesMarker + "\n- " + strings.Join(files, "\n- ")
+}
+
+// parseFiles extracts a file list previously written by formatFiles.
+func parseFiles(text string) []string {
+	i := strings.LastIndex(text, filesMarker)
+	if i < 0 {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(text[i+len(filesMarker):], "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "- ") {
+			break
+		}
+		out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "- ")))
+	}
+	return out
+}
+
 // touchedFiles lists the paths read, written, or edited and the commands run
-// during the session, so a summary can preserve the working set.
+// during the session, plus the files carried over from earlier compactions, so
+// a summary preserves the full working set.
 func touchedFiles(history []llm.Message) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -258,6 +296,9 @@ func touchedFiles(history []llm.Message) []string {
 		}
 	}
 	for _, m := range history {
+		for _, f := range parseFiles(m.Text) {
+			add(f)
+		}
 		for _, c := range m.Calls {
 			var a struct {
 				Path    string `json:"path"`

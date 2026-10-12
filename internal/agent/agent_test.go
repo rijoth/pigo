@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -185,6 +186,55 @@ func TestCompact(t *testing.T) {
 	}
 	if len(newHistory) != 3 || newHistory[0].Text != "[Earlier conversation summary]\nsummary" {
 		t.Fatalf("new history: %+v", newHistory)
+	}
+}
+
+func TestCompactStoresTouchedFiles(t *testing.T) {
+	p := &fakeProvider{script: [][]llm.Delta{{{Text: "summary"}}}}
+	call := func(name string, path string) llm.ToolCall {
+		b, _ := json.Marshal(map[string]string{"path": path})
+		return llm.ToolCall{ID: "1", Name: name, Args: b}
+	}
+	history := []llm.Message{
+		{Role: llm.RoleUser, Text: "one"},
+		{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("edit", "a.go")}},
+		{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "x"}}},
+		{Role: llm.RoleUser, Text: "two"},
+		{Role: llm.RoleAssistant, Text: "b"},
+	}
+	newHistory, summary, _, err := Compact(context.Background(), p, "sys", history, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(summary, filesMarker) || !strings.Contains(summary, "a.go") {
+		t.Fatalf("stored summary missing files: %q", summary)
+	}
+	if !strings.Contains(newHistory[0].Text, "- a.go") {
+		t.Fatalf("history summary missing files: %q", newHistory[0].Text)
+	}
+}
+
+func TestTouchedFilesCarryAcrossCompactions(t *testing.T) {
+	call := func(name, path string) llm.ToolCall {
+		b, _ := json.Marshal(map[string]string{"path": path})
+		return llm.ToolCall{ID: "1", Name: name, Args: b}
+	}
+	first := []llm.Message{
+		{Role: llm.RoleUser, Text: "one"},
+		{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("read", "a.go")}},
+		{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "x"}}},
+	}
+	if got := touchedFiles(first); len(got) != 1 || got[0] != "a.go" {
+		t.Fatalf("first files: %v", got)
+	}
+	summaryMsg := llm.Message{Role: llm.RoleUser, Text: "[Earlier conversation summary]\nsummary" + formatFiles(touchedFiles(first))}
+	second := append([]llm.Message{summaryMsg},
+		llm.Message{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("write", "b.go")}},
+		llm.Message{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "y"}}},
+	)
+	got := touchedFiles(second)
+	if len(got) != 2 || got[0] != "a.go" || got[1] != "b.go" {
+		t.Fatalf("cumulative files: %v", got)
 	}
 }
 
