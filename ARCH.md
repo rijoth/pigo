@@ -113,8 +113,9 @@ package event
 type Kind int
 
 const (
-    TextDelta   Kind = iota // streamed assistant text; Text set
-    ToolStart               // model requested a tool; Call set
+    TextDelta     Kind = iota // streamed assistant text; Text set
+    ThinkingDelta             // completed reasoning block; Text set
+    ToolStart                 // model requested a tool; Call set
     ToolResult              // tool finished; Call and Result set
     TurnEnd                 // assistant finished (no more tool calls); Usage set
     Notice                  // informational (e.g. "compacting context"); Text set
@@ -149,10 +150,19 @@ const (
 )
 
 type Message struct {
-    Role    Role
-    Text    string       // user/assistant text
-    Calls   []ToolCall   // assistant only
-    Results []ToolResult // tool role only
+    Role      Role
+    Text      string           // user/assistant text
+    Reasoning []ReasoningBlock // assistant only; reasoning/thinking blocks
+    Calls     []ToolCall       // assistant only
+    Results   []ToolResult     // tool role only
+}
+
+// ReasoningBlock is one reasoning/thinking block. Metadata is opaque,
+// provider-specific replay data (for example an Anthropic thinking signature);
+// it is stored verbatim and sent back unchanged so the provider accepts it.
+type ReasoningBlock struct {
+    Text     string          // visible reasoning text, may be empty (redacted)
+    Metadata json.RawMessage // opaque provider metadata, may be empty
 }
 
 type ToolCall struct {
@@ -186,10 +196,11 @@ type Usage struct {
 
 // Delta is one item from a streaming response.
 type Delta struct {
-    Text  string    // incremental text, if any
-    Call  *ToolCall // a complete tool call, if any
-    Usage *Usage    // set on final delta
-    Err   error     // terminal error
+    Text      string          // incremental text, if any
+    Reasoning *ReasoningBlock // a complete reasoning block, if any
+    Call      *ToolCall       // a complete tool call, if any
+    Usage     *Usage          // set on final delta
+    Err       error           // terminal error
 }
 
 type Provider interface {
@@ -371,6 +382,7 @@ All terminal concerns live here and only here.
 | Event | Rendering |
 |-------|-----------|
 | `TextDelta` | Streamed to stdout (see below). |
+| `ThinkingDelta` | A completed reasoning block, rendered dim and italic. Hidden when thinking is toggled off (`/thinking` or Ctrl+T) or when output is not a TTY. |
 | `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). For `edit` and `write`, a unified diff preview of the pending change follows, computed without running the tool and capped by `UIDiffLines`. |
 | `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. `edit` and `write` show a one-line status instead of repeating the preview. Full output still goes to the model. `/expand` reprints an untruncated preview. |
 | `TurnEnd` | Blank line; optional dim token usage footer. |
@@ -400,6 +412,7 @@ All terminal concerns live here and only here.
 | `/compact` | Force compaction (once implemented) |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
+| `/thinking` | Toggle reasoning-block display (also Ctrl+T). With `on`/`off`, set it explicitly. |
 | `/login` | List providers with a key-status marker and store an API key for the selected one. `/login <provider>` skips the list. OAuth/subscription providers report that they are unsupported. |
 | `/logout` | List providers with a stored key (an auth.json credential or a literal `apiKey` in pigo's `models.json`) and remove the selected one. Clearing the `models.json` key makes the provider stop appearing in the model picker; `$ENV` and `!command` sources are configuration and are left alone. |
 

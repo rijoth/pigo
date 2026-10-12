@@ -2,9 +2,12 @@ package fantasy
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"charm.land/fantasy"
+	"charm.land/fantasy/providers/anthropic"
 
 	"pigo/internal/llm"
 )
@@ -37,6 +40,65 @@ func (m *fakeModel) StreamObject(context.Context, fantasy.ObjectCall) (fantasy.O
 
 func (m *fakeModel) Provider() string { return "fake" }
 func (m *fakeModel) Model() string    { return "fake" }
+
+type reasoningModel struct {
+	fakeModel
+	reasoningCall fantasy.Call
+}
+
+func (m *reasoningModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	m.reasoningCall = call
+	return func(yield func(fantasy.StreamPart) bool) {
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeReasoningStart, ID: "0"})
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeReasoningDelta, ID: "0", Delta: "ponder"})
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeReasoningDelta, ID: "0", ProviderMetadata: fantasy.ProviderMetadata{
+			anthropic.Name: &anthropic.ReasoningOptionMetadata{Signature: "sig"},
+		}})
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeReasoningEnd, ID: "0"})
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, Usage: fantasy.Usage{}})
+	}, nil
+}
+
+// TestFantasyReasoning checks that a reasoning block is emitted once complete,
+// including its signature, and that stored metadata replays as provider options.
+func TestFantasyReasoning(t *testing.T) {
+	old := json.RawMessage(`{"anthropic":{"type":"anthropic.reasoning_metadata","data":{"signature":"old"}}}`)
+	model := &reasoningModel{}
+	p := &fantasyProvider{model: model}
+	ch, err := p.Stream(context.Background(), llm.Request{Messages: []llm.Message{
+		{Role: llm.RoleAssistant, Reasoning: []llm.ReasoningBlock{{Text: "prior", Metadata: old}}},
+		{Role: llm.RoleUser, Text: "hi"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block *llm.ReasoningBlock
+	for d := range ch {
+		if d.Err != nil {
+			t.Fatal(d.Err)
+		}
+		if d.Reasoning != nil {
+			block = d.Reasoning
+		}
+	}
+	if block == nil || block.Text != "ponder" {
+		t.Fatalf("reasoning = %+v", block)
+	}
+	if !strings.Contains(string(block.Metadata), `"signature":"sig"`) {
+		t.Fatalf("metadata = %s", block.Metadata)
+	}
+	if len(model.reasoningCall.Prompt) < 2 {
+		t.Fatalf("prompt = %+v", model.reasoningCall.Prompt)
+	}
+	part, ok := fantasy.AsMessagePart[fantasy.ReasoningPart](model.reasoningCall.Prompt[0].Content[0])
+	if !ok || part.Text != "prior" {
+		t.Fatalf("replayed part = %+v (ok=%v)", part, ok)
+	}
+	meta := anthropic.GetReasoningMetadata(part.Options())
+	if meta == nil || meta.Signature != "old" {
+		t.Fatalf("replayed metadata = %+v", meta)
+	}
+}
 
 func TestFantasyStreamMapping(t *testing.T) {
 	model := &fakeModel{}

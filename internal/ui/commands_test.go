@@ -48,7 +48,7 @@ func TestCompleteCommands(t *testing.T) {
 		line string
 		want []string
 	}{
-		{"/", []string{"/exit", "/new", "/resume", "/tree", "/session", "/compact", "/model", "/login", "/logout", "/expand"}},
+		{"/", []string{"/exit", "/new", "/resume", "/tree", "/session", "/compact", "/model", "/thinking", "/login", "/logout", "/expand"}},
 		{"/m", []string{"/model"}},
 		{"/x", nil},
 		{"hello", nil},

@@ -21,6 +21,7 @@ var Commands = []Command{
 	{"/session", "show the current session"},
 	{"/compact", "compact the context"},
 	{"/model", "select or set the model"},
+	{"/thinking", "show or hide reasoning blocks"},
 	{"/login", "store an API key for a provider"},
 	{"/logout", "remove a stored API key"},
 	{"/expand", "show the last tool result in full"},

@@ -255,7 +255,34 @@ func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan l
 	ch := make(chan llm.Delta)
 	go func() {
 		defer close(ch)
+		// Reasoning arrives as a start/delta/end sequence; text and the
+		// signature (provider metadata) may arrive in separate parts, so
+		// gather one block and emit it complete.
+		active := &llm.ReasoningBlock{}
 		for part := range seq {
+			switch part.Type {
+			case fantasy.StreamPartTypeReasoningStart, fantasy.StreamPartTypeReasoningDelta:
+				active.Text += part.Delta
+				if len(part.ProviderMetadata) > 0 {
+					active.Metadata = marshalMetadata(part.ProviderMetadata)
+				}
+				continue
+			case fantasy.StreamPartTypeReasoningEnd:
+				b := active
+				active = &llm.ReasoningBlock{}
+				if len(part.ProviderMetadata) > 0 {
+					b.Metadata = marshalMetadata(part.ProviderMetadata)
+				}
+				if b.Text == "" && len(b.Metadata) == 0 {
+					continue
+				}
+				select {
+				case ch <- llm.Delta{Reasoning: b}:
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
 			var d llm.Delta
 			switch part.Type {
 			case fantasy.StreamPartTypeTextDelta:
@@ -286,6 +313,33 @@ func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan l
 	return ch, nil
 }
 
+// marshalMetadata serializes provider metadata (reasoning signatures) to
+// opaque JSON so it can be replayed later. It returns nil on failure.
+func marshalMetadata(m fantasy.ProviderMetadata) json.RawMessage {
+	if len(m) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// providerOptions rebuilds provider options from stored metadata JSON. An
+// unknown provider type is dropped rather than failing the whole request.
+func providerOptions(raw json.RawMessage) fantasy.ProviderOptions {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	opts, err := fantasy.UnmarshalProviderMetadata(m)
+	if err != nil {
+		return nil
+	}
+	return fantasy.ProviderOptions(opts)
+}
+
 func toFantasyPrompt(req llm.Request) fantasy.Prompt {
 	var prompt fantasy.Prompt
 	if req.System != "" {
@@ -296,7 +350,13 @@ func toFantasyPrompt(req llm.Request) fantasy.Prompt {
 		case llm.RoleUser:
 			prompt = append(prompt, fantasy.NewUserMessage(m.Text))
 		case llm.RoleAssistant:
-			parts := make([]fantasy.MessagePart, 0, len(m.Calls)+1)
+			parts := make([]fantasy.MessagePart, 0, len(m.Reasoning)+len(m.Calls)+1)
+			for _, r := range m.Reasoning {
+				if r.Text == "" && len(r.Metadata) == 0 {
+					continue
+				}
+				parts = append(parts, fantasy.ReasoningPart{Text: r.Text, ProviderOptions: providerOptions(r.Metadata)})
+			}
 			if m.Text != "" {
 				parts = append(parts, fantasy.TextPart{Text: m.Text})
 			}

@@ -16,15 +16,16 @@ const (
 // styles holds every lipgloss style the UI uses. When disabled, every field is
 // the zero Style: Render returns its input unchanged and emits no ANSI.
 type styles struct {
-	dim    lipgloss.Style
-	err    lipgloss.Style
-	add    lipgloss.Style
-	del    lipgloss.Style
-	hunk   lipgloss.Style
-	label  lipgloss.Style
-	header lipgloss.Style
-	prompt lipgloss.Style
-	shell  lipgloss.Style
+	dim      lipgloss.Style
+	err      lipgloss.Style
+	add      lipgloss.Style
+	del      lipgloss.Style
+	hunk     lipgloss.Style
+	label    lipgloss.Style
+	header   lipgloss.Style
+	prompt   lipgloss.Style
+	shell    lipgloss.Style
+	thinking lipgloss.Style
 }
 
 func newStyles(enabled bool) styles {
@@ -41,5 +42,6 @@ func newStyles(enabled bool) styles {
 	s.header = lipgloss.NewStyle().Bold(true)
 	s.prompt = lipgloss.NewStyle().Foreground(lipgloss.Color(colorAccent))
 	s.shell = lipgloss.NewStyle().Foreground(lipgloss.Color(colorShell))
+	s.thinking = lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color(colorDim))
 	return s
 }

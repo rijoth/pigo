@@ -9,6 +9,8 @@ type Kind int
 const (
 	// TextDelta is streamed assistant text; Text is set.
 	TextDelta Kind = iota
+	// ThinkingDelta is a completed reasoning block; Text is set.
+	ThinkingDelta
 	// ToolStart means the model requested a tool; Call is set.
 	ToolStart
 	// ToolResult means a tool finished; Call and Result are set.

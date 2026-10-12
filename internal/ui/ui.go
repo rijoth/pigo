@@ -51,6 +51,7 @@ type UI struct {
 	model         string
 	project       string
 	failed        bool
+	showThinking  bool
 	inTotal       int
 	outTotal      int
 }
@@ -63,13 +64,14 @@ func New(out, errOut *os.File, historyFile string) *UI {
 	color := interactive && !raw && os.Getenv("NO_COLOR") == ""
 	width := termWidth(out)
 	u := &UI{
-		out:    out,
-		errOut: errOut,
-		raw:    raw,
-		color:  color,
-		narrow: width < config.NarrowWidth,
-		width:  width,
-		styles: newStyles(color),
+		out:          out,
+		errOut:       errOut,
+		raw:          raw,
+		color:        color,
+		narrow:       width < config.NarrowWidth,
+		width:        width,
+		showThinking: config.ShowThinking,
+		styles:       newStyles(color),
 	}
 	if config.ShowSpinner {
 		// Animate only on a styled terminal; stderr may differ from stdout.
@@ -81,6 +83,7 @@ func New(out, errOut *os.File, historyFile string) *UI {
 	}
 	if interactive {
 		u.editor = newLineEditor(historyFile)
+		u.editor.onToggleThinking = u.ToggleThinking
 	}
 	if u.editor == nil {
 		u.scanner = bufio.NewScanner(os.Stdin)
@@ -99,6 +102,18 @@ func (u *UI) SetModels(refs []string) {
 // SetContextWindow supplies the current model's context size for the footer.
 // Zero disables the context line.
 func (u *UI) SetContextWindow(n int) { u.contextWindow = n }
+
+// Thinking reports whether reasoning blocks are shown.
+func (u *UI) Thinking() bool { return u.showThinking }
+
+// SetThinking shows or hides reasoning blocks.
+func (u *UI) SetThinking(on bool) { u.showThinking = on }
+
+// ToggleThinking flips reasoning-block visibility and returns the new state.
+func (u *UI) ToggleThinking() bool {
+	u.showThinking = !u.showThinking
+	return u.showThinking
+}
 
 // SetModel supplies the model label shown before the prompt marker. Empty
 // leaves the marker bare.
@@ -140,6 +155,8 @@ func (u *UI) Render(ev event.Event) {
 		} else {
 			u.md.Write(ev.Text)
 		}
+	case event.ThinkingDelta:
+		u.renderThinking(ev.Text)
 	case event.ToolStart:
 		if u.raw {
 			fmt.Fprintln(u.out, "> "+toolSummary(ev.Call.Name, ev.Call.Args, u.width))
@@ -218,6 +235,9 @@ func (u *UI) Restore(header string, history []llm.Message) {
 		case llm.RoleUser:
 			u.write(u.prompt(MainPrompt, "") + m.Text + "\n")
 		case llm.RoleAssistant:
+			for i := range m.Reasoning {
+				u.renderThinking(m.Reasoning[i].Text)
+			}
 			u.renderTextBlock(m.Text)
 			for i := range m.Calls {
 				call := &m.Calls[i]
@@ -232,6 +252,21 @@ func (u *UI) Restore(header string, history []llm.Message) {
 		}
 	}
 	u.flushMarkdown()
+}
+
+// renderThinking prints one reasoning block, dim and italic with a marker on
+// the first line. It is a no-op when thinking is hidden or output is piped.
+func (u *UI) renderThinking(text string) {
+	if !u.showThinking || u.raw || strings.TrimSpace(text) == "" {
+		return
+	}
+	for i, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		prefix := "  "
+		if i == 0 {
+			prefix = "✻ "
+		}
+		fmt.Fprintln(u.out, u.styles.thinking.Render(prefix+line))
+	}
 }
 
 // renderTextBlock writes one message body, rendered as markdown when styling is

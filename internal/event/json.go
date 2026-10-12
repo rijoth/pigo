@@ -27,6 +27,8 @@ func Encode(w io.Writer, ev Event) error {
 	switch ev.Kind {
 	case TextDelta:
 		r.Type, r.Text = "text_delta", ev.Text
+	case ThinkingDelta:
+		r.Type, r.Text = "thinking_delta", ev.Text
 	case ToolStart:
 		r.Type = "tool_start"
 		if ev.Call != nil {

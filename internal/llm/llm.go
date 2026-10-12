@@ -17,10 +17,19 @@ const (
 
 // Message is one conversation turn.
 type Message struct {
-	Role    Role         `json:"role"`
-	Text    string       `json:"text,omitempty"`
-	Calls   []ToolCall   `json:"calls,omitempty"`
-	Results []ToolResult `json:"results,omitempty"`
+	Role      Role             `json:"role"`
+	Text      string           `json:"text,omitempty"`
+	Reasoning []ReasoningBlock `json:"reasoning,omitempty"` // assistant only
+	Calls     []ToolCall       `json:"calls,omitempty"`
+	Results   []ToolResult     `json:"results,omitempty"`
+}
+
+// ReasoningBlock is one reasoning/thinking block from an assistant message.
+// Metadata is opaque, provider-specific replay data (for example an Anthropic
+// thinking signature) and is stored verbatim so the block can be sent back.
+type ReasoningBlock struct {
+	Text     string          `json:"text,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 // ToolCall is a tool invocation requested by the model.
@@ -59,10 +68,11 @@ type Usage struct {
 
 // Delta is one item from a streaming response.
 type Delta struct {
-	Text  string
-	Call  *ToolCall
-	Usage *Usage
-	Err   error
+	Text      string
+	Reasoning *ReasoningBlock // a completed reasoning block, if any
+	Call      *ToolCall
+	Usage     *Usage
+	Err       error
 }
 
 // Provider streams model responses.

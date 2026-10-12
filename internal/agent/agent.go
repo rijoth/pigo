@@ -38,7 +38,7 @@ func (a *Agent) Run(ctx context.Context, history []llm.Message, userText string,
 
 	for step := 0; step < steps; step++ {
 		assistant, usage, err := a.streamWithRetry(ctx, llm.Request{System: a.System, Messages: history, Tools: specs}, emit)
-		if assistant.Text != "" || len(assistant.Calls) > 0 {
+		if assistant.Text != "" || len(assistant.Calls) > 0 || len(assistant.Reasoning) > 0 {
 			history = append(history, assistant)
 		}
 
@@ -105,6 +105,12 @@ func (a *Agent) streamWithRetry(ctx context.Context, req llm.Request, emit func(
 					observable = true
 					assistant.Text += d.Text
 					emit(event.Event{Kind: event.TextDelta, Text: d.Text})
+				case d.Reasoning != nil:
+					observable = true
+					assistant.Reasoning = append(assistant.Reasoning, *d.Reasoning)
+					if d.Reasoning.Text != "" {
+						emit(event.Event{Kind: event.ThinkingDelta, Text: d.Reasoning.Text})
+					}
 				case d.Call != nil:
 					observable = true
 					assistant.Calls = append(assistant.Calls, *d.Call)

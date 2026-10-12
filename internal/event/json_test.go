@@ -16,6 +16,7 @@ func TestEncode(t *testing.T) {
 		want string
 	}{
 		{"text", Event{Kind: TextDelta, Text: "hi"}, `{"type":"text_delta","text":"hi"}`},
+		{"thinking", Event{Kind: ThinkingDelta, Text: "hmm"}, `{"type":"thinking_delta","text":"hmm"}`},
 		{"tool_start", Event{Kind: ToolStart, Call: &llm.ToolCall{Name: "bash", Args: json.RawMessage(`{"command":"ls"}`)}}, `{"type":"tool_start","name":"bash","args":{"command":"ls"}}`},
 		{"tool_result", Event{Kind: ToolResult, Result: &llm.ToolResult{Content: "out", IsError: true}}, `{"type":"tool_result","content":"out","is_error":true}`},
 		{"turn_end", Event{Kind: TurnEnd, Usage: &llm.Usage{InputTokens: 3, OutputTokens: 4}}, `{"type":"turn_end","usage":{"input_tokens":3,"output_tokens":4}}`},

@@ -320,6 +320,21 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 					}
 				})
 				continue
+			case "thinking":
+				switch strings.ToLower(strings.TrimSpace(arg)) {
+				case "on", "show", "expand":
+					u.SetThinking(true)
+				case "off", "hide", "collapse":
+					u.SetThinking(false)
+				default:
+					u.ToggleThinking()
+				}
+				state := "off"
+				if u.Thinking() {
+					state = "on"
+				}
+				u.Render(event.Event{Kind: event.Notice, Text: "thinking blocks: " + state})
+				continue
 			case "expand":
 				u.Expand()
 				continue

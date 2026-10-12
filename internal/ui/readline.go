@@ -13,9 +13,10 @@ import (
 var ErrModelSelect = errors.New("model select")
 
 type lineEditor struct {
-	rl          *readline.Shell
-	models      []string
-	selectModel bool
+	rl               *readline.Shell
+	models           []string
+	selectModel      bool
+	onToggleThinking func() bool
 }
 
 func newLineEditor(historyFile string) *lineEditor {
@@ -32,9 +33,10 @@ func newLineEditor(historyFile string) *lineEditor {
 	e := &lineEditor{rl: rl}
 	rl.Completer = e.complete
 	rl.Keymap.Register(map[string]func(){
-		"pigo-menu-next":    func() { e.stepMenu(1) },
-		"pigo-menu-prev":    func() { e.stepMenu(-1) },
-		"pigo-model-select": e.requestModelSelect,
+		"pigo-menu-next":       func() { e.stepMenu(1) },
+		"pigo-menu-prev":       func() { e.stepMenu(-1) },
+		"pigo-model-select":    e.requestModelSelect,
+		"pigo-thinking-toggle": e.toggleThinking,
 	})
 	// Readline stores arrow keys metafied; match and replace them so plain
 	// up/down cycle the command menu but stay bound to history otherwise.
@@ -42,7 +44,22 @@ func newLineEditor(historyFile string) *lineEditor {
 	e.bindArrow("\x1b[A", "pigo-menu-prev")
 	// Ctrl+L opens the model picker instead of clearing the screen.
 	e.bindArrow("\x0c", "pigo-model-select")
+	// Ctrl+T toggles reasoning blocks instead of transposing characters.
+	e.bindArrow("\x14", "pigo-thinking-toggle")
 	return e
+}
+
+// toggleThinking flips reasoning-block visibility without disturbing the line
+// being edited; readline redraws the prompt below the printed notice.
+func (e *lineEditor) toggleThinking() {
+	if e.onToggleThinking == nil {
+		return
+	}
+	state := "on"
+	if !e.onToggleThinking() {
+		state = "off"
+	}
+	e.rl.Printf("thinking blocks: %s", state)
 }
 
 // requestModelSelect accepts the current line so the readline call returns,
