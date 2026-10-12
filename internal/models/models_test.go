@@ -81,3 +81,44 @@ func TestResolveKey(t *testing.T) {
 		}
 	}
 }
+
+func TestClearAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "models.json")
+	os.WriteFile(path, []byte(`{
+	  "providers": {
+	    "opencode": {"baseUrl": "https://x", "apiKey": "secret", "models": [{"id": "glm"}]},
+	    "nanogpt": {"apiKey": "$NANO_KEY", "models": [{"id": "qwen"}]}
+	  }
+	}`), 0o600)
+
+	if err := ClearAPIKey(path, "opencode"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := LoadModels(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Find(entries, "opencode/glm"); !ok {
+		t.Fatalf("opencode model lost: %+v", entries)
+	}
+	if got, _ := Find(entries, "opencode/glm"); got.APIKey != "" {
+		t.Fatalf("apiKey = %q, want empty", got.APIKey)
+	}
+
+	// $ENV sources are configuration, not stored secrets.
+	if err := ClearAPIKey(path, "nanogpt"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = LoadModels(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := Find(entries, "nanogpt/qwen"); e.APIKey != "$NANO_KEY" {
+		t.Fatalf("env apiKey = %q, want unchanged", e.APIKey)
+	}
+
+	if err := ClearAPIKey(filepath.Join(dir, "absent.json"), "opencode"); err != nil {
+		t.Fatalf("missing file: %v", err)
+	}
+}

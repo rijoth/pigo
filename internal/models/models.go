@@ -173,6 +173,87 @@ func LoadModelsStore(path string) ([]ModelEntry, error) {
 	return out, nil
 }
 
+// ClearAPIKey removes the literal apiKey stored for provider in the
+// models.json at path, leaving every other field intact. An $ENV or !command
+// apiKey is configuration rather than a stored secret, so it is left alone; a
+// missing file or provider is a no-op. The write is atomic and 0600.
+func ClearAPIKey(path, provider string) error {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var file map[string]json.RawMessage
+	if err := json.Unmarshal(b, &file); err != nil {
+		return fmt.Errorf("models.json: %w", err)
+	}
+	rawProviders, ok := file["providers"]
+	if !ok {
+		return nil
+	}
+	var providers map[string]json.RawMessage
+	if err := json.Unmarshal(rawProviders, &providers); err != nil {
+		return fmt.Errorf("models.json: providers: %w", err)
+	}
+	entry, ok := providers[provider]
+	if !ok {
+		return nil
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &cfg); err != nil {
+		return fmt.Errorf("models.json: provider %q: %w", provider, err)
+	}
+	rawKey, ok := cfg["apiKey"]
+	if !ok {
+		return nil
+	}
+	var key string
+	if err := json.Unmarshal(rawKey, &key); err != nil {
+		return fmt.Errorf("models.json: provider %q apiKey: %w", provider, err)
+	}
+	if s := strings.TrimSpace(key); strings.HasPrefix(s, "$") || strings.HasPrefix(s, "!") {
+		return nil
+	}
+	delete(cfg, "apiKey")
+	if providers[provider], err = json.Marshal(cfg); err != nil {
+		return err
+	}
+	if file["providers"], err = json.Marshal(providers); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, append(out, '\n'))
+}
+
+func writeFileAtomic(path string, b []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".models-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 // flattenProviders turns provider configs into a flat list of model entries,
 // applying each provider's defaults and modelOverrides.
 func flattenProviders(providers map[string]providerConfig) []ModelEntry {

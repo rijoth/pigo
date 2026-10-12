@@ -10,6 +10,7 @@ import (
 
 	"pigo/internal/auth"
 	"pigo/internal/event"
+	"pigo/internal/models"
 	"pigo/internal/providers"
 	"pigo/internal/ui"
 )
@@ -109,6 +110,11 @@ func handleLogout(u *ui.UI, authPath string, rebuild func()) {
 	if err := auth.Delete(authPath, ref); err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
 		return
+	}
+	// A literal key may also sit in models.json, where it keeps the provider
+	// authenticated after the auth.json credential is gone.
+	if err := models.ClearAPIKey(models.ModelsPath(), ref); err != nil {
+		u.Render(event.Event{Kind: event.Error, Err: err})
 	}
 	u.Render(event.Event{Kind: event.Notice, Text: "logged out from " + ref})
 	rebuild()
