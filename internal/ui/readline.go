@@ -17,6 +17,7 @@ type lineEditor struct {
 	models           []string
 	selectModel      bool
 	onToggleThinking func() bool
+	onCycleThinking  func() string
 }
 
 func newLineEditor(historyFile string) *lineEditor {
@@ -37,6 +38,7 @@ func newLineEditor(historyFile string) *lineEditor {
 		"pigo-menu-prev":       func() { e.stepMenu(-1) },
 		"pigo-model-select":    e.requestModelSelect,
 		"pigo-thinking-toggle": e.toggleThinking,
+		"pigo-thinking-cycle":  e.cycleThinking,
 	})
 	// Readline stores arrow keys metafied; match and replace them so plain
 	// up/down cycle the command menu but stay bound to history otherwise.
@@ -46,6 +48,9 @@ func newLineEditor(historyFile string) *lineEditor {
 	e.bindArrow("\x0c", "pigo-model-select")
 	// Ctrl+T toggles reasoning blocks instead of transposing characters.
 	e.bindArrow("\x14", "pigo-thinking-toggle")
+	// Shift+Tab cycles the reasoning level. It has no default bind, so it is
+	// added directly; the completion menu keeps its own shift-tab binding.
+	e.rl.Config.Binds["emacs"]["\x1b[Z"] = inputrc.Bind{Action: "pigo-thinking-cycle"}
 	return e
 }
 
@@ -60,6 +65,14 @@ func (e *lineEditor) toggleThinking() {
 		state = "off"
 	}
 	e.rl.Printf("thinking blocks: %s", state)
+}
+
+// cycleThinking advances the reasoning level and prints it above the prompt.
+func (e *lineEditor) cycleThinking() {
+	if e.onCycleThinking == nil {
+		return
+	}
+	e.rl.Printf("thinking: %s", e.onCycleThinking())
 }
 
 // requestModelSelect accepts the current line so the readline call returns,

@@ -23,7 +23,10 @@ import (
 )
 
 type fantasyProvider struct {
-	model fantasy.LanguageModel
+	model     fantasy.LanguageModel
+	provider  string            // fantasy provider name: anthropic, openai, openrouter, google, openai-compat
+	levelMap  map[string]string // thinkingLevelMap overrides from models.json
+	reasoning bool              // model declares reasoning support
 }
 
 // Version is the pigo version advertised in the User-Agent header.
@@ -85,7 +88,7 @@ func NewFantasy(providerName, modelID string, session func() string) (llm.Provid
 	if err != nil {
 		return nil, fmt.Errorf("model %q: %w", modelID, err)
 	}
-	return &fantasyProvider{model: model}, nil
+	return &fantasyProvider{model: model, provider: normalizeProvider(providerName)}, nil
 }
 
 // NewFantasyEntry builds a provider for a models.json entry, using a custom
@@ -99,7 +102,7 @@ func NewFantasyEntry(e models.ModelEntry, session func() string) (llm.Provider, 
 	if err != nil {
 		return nil, fmt.Errorf("model %q: %w", e.Model, err)
 	}
-	return &fantasyProvider{model: model}, nil
+	return &fantasyProvider{model: model, provider: entryProvider(e), levelMap: levelOverrides(e.ThinkingLevelMap), reasoning: e.Reasoning}, nil
 }
 
 // NewFromRef builds a provider from a models.json reference. found is false
@@ -246,8 +249,9 @@ func newFantasyProvider(name string, session func() string) (fantasy.Provider, e
 
 func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan llm.Delta, error) {
 	seq, err := f.model.Stream(ctx, fantasy.Call{
-		Prompt: toFantasyPrompt(req),
-		Tools:  toFantasyTools(req.Tools),
+		Prompt:          toFantasyPrompt(req),
+		Tools:           toFantasyTools(req.Tools),
+		ProviderOptions: f.thinkingOptions(req.Thinking),
 	})
 	if err != nil {
 		return nil, err

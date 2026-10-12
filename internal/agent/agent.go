@@ -19,6 +19,7 @@ type Agent struct {
 	Provider   llm.Provider
 	Tools      map[string]tools.Tool
 	System     string
+	Thinking   string                  // reasoning level; empty or "off" disables
 	Approve    func(llm.ToolCall) bool // nil means always approve
 	MaxSteps   int
 	MaxRetries int           // transient-failure retries per model call
@@ -37,7 +38,7 @@ func (a *Agent) Run(ctx context.Context, history []llm.Message, userText string,
 	specs := a.toolSpecs()
 
 	for step := 0; step < steps; step++ {
-		assistant, usage, err := a.streamWithRetry(ctx, llm.Request{System: a.System, Messages: history, Tools: specs}, emit)
+		assistant, usage, err := a.streamWithRetry(ctx, llm.Request{System: a.System, Messages: history, Tools: specs, Thinking: a.Thinking}, emit)
 		if assistant.Text != "" || len(assistant.Calls) > 0 || len(assistant.Reasoning) > 0 {
 			history = append(history, assistant)
 		}

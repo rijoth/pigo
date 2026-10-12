@@ -459,3 +459,14 @@ func TestModelRefPersist(t *testing.T) {
 		t.Fatalf("empty ref overwrote: got %q", got)
 	}
 }
+
+func TestThinkingLevelPersist(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if got := LoadThinkingLevel(); got != "" {
+		t.Fatalf("missing file: got %q, want empty", got)
+	}
+	SaveThinkingLevel("high")
+	if got := LoadThinkingLevel(); got != "high" {
+		t.Fatalf("got %q, want high", got)
+	}
+}

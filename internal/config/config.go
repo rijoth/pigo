@@ -19,11 +19,12 @@ const (
 	RetryMaxMs      = 8_000
 	KeepRecentMsgs  = 8
 	UIToolLines     = 8
-	UIDiffLines     = 20      // cap on a tool change preview, /expand shows the rest
-	ShowThinking    = true    // show reasoning blocks; toggled by Ctrl+T or /thinking
-	RenderMode      = "block" // "block" or "raw"
-	Theme           = "dark"  // glamour/chroma style: "dark" or "light"
-	NarrowWidth     = 60      // below this, use the compact layout
+	UIDiffLines     = 20       // cap on a tool change preview, /expand shows the rest
+	ShowThinking    = true     // show reasoning blocks; toggled by Ctrl+T or /thinking
+	DefaultThinking = "medium" // startup reasoning level, same default as Pi
+	RenderMode      = "block"  // "block" or "raw"
+	Theme           = "dark"   // glamour/chroma style: "dark" or "light"
+	NarrowWidth     = 60       // below this, use the compact layout
 	DefaultProvider = "anthropic"
 	DefaultModel    = "" // empty: require PIGO_MODEL or -m
 )

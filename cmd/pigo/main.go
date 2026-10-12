@@ -107,10 +107,13 @@ func run() int {
 		}
 	}
 
+	thinking := startupThinking(modelLabel)
+	u.SetThinkingLevel(thinking)
 	ag := &agent.Agent{
 		Provider:   provider,
 		Tools:      tools.Default(),
 		System:     system,
+		Thinking:   thinking,
 		MaxSteps:   config.MaxSteps,
 		MaxRetries: config.MaxRetries,
 		RetryBase:  time.Duration(config.RetryBaseMs) * time.Millisecond,
@@ -138,6 +141,43 @@ func run() int {
 func fatal(err error) int {
 	fmt.Fprintln(os.Stderr, "pigo:", err)
 	return 1
+}
+
+// supportedThinking returns the reasoning levels a model ref supports; an
+// unknown model supports only "off".
+func supportedThinking(ref string) []string {
+	if e, ok := models.Find(models.AvailableModels(), ref); ok {
+		return e.SupportedThinkingLevels()
+	}
+	return []string{"off"}
+}
+
+// hasLevel reports whether level is in levels.
+func hasLevel(levels []string, level string) bool {
+	for _, l := range levels {
+		if l == level {
+			return true
+		}
+	}
+	return false
+}
+
+// clampThinking returns level clamped to what the model supports.
+func clampThinking(ref, level string) string {
+	if e, ok := models.Find(models.AvailableModels(), ref); ok {
+		return e.ClampThinkingLevel(level)
+	}
+	return "off"
+}
+
+// startupThinking returns the remembered reasoning level, or the configured
+// default, clamped to the model's supported levels.
+func startupThinking(ref string) string {
+	level := session.LoadThinkingLevel()
+	if level == "" {
+		level = config.DefaultThinking
+	}
+	return clampThinking(ref, level)
 }
 
 // bannerText renders the startup summary: pigo version, the context files and
@@ -202,6 +242,15 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 	var lastInput int
 	contextWindow := models.ContextWindow(modelLabel)
 	compactAt := compactLimit(contextWindow)
+	levels := supportedThinking(modelLabel)
+	thinking := ag.Thinking
+	u.OnCycleThinking(func() string {
+		thinking = models.NextThinkingLevel(levels, thinking)
+		ag.Thinking = thinking
+		session.SaveThinkingLevel(thinking)
+		u.SetThinkingLevel(thinking)
+		return thinking
+	})
 	emit := func(ev event.Event) {
 		u.Render(ev)
 		if ev.Kind == event.TurnEnd && ev.Usage != nil {
@@ -232,8 +281,12 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		session.SaveModelRef(label)
 		contextWindow = models.ContextWindow(label)
 		compactAt = compactLimit(contextWindow)
+		levels = supportedThinking(label)
+		thinking = clampThinking(label, thinking)
+		ag.Thinking = thinking
 		u.SetContextWindow(contextWindow)
 		u.SetModel(label)
+		u.SetThinkingLevel(thinking)
 		u.Render(event.Event{Kind: event.Notice, Text: "model: " + label})
 	}
 	for {
@@ -321,19 +374,18 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				})
 				continue
 			case "thinking":
-				switch strings.ToLower(strings.TrimSpace(arg)) {
-				case "on", "show", "expand":
-					u.SetThinking(true)
-				case "off", "hide", "collapse":
-					u.SetThinking(false)
-				default:
-					u.ToggleThinking()
+				arg = strings.ToLower(strings.TrimSpace(arg))
+				if arg != "" && !hasLevel(levels, arg) {
+					u.Render(event.Event{Kind: event.Error, Err: fmt.Errorf("thinking %q not supported; use %s", arg, strings.Join(levels, ", "))})
+					continue
 				}
-				state := "off"
-				if u.Thinking() {
-					state = "on"
+				if arg != "" {
+					thinking = arg
 				}
-				u.Render(event.Event{Kind: event.Notice, Text: "thinking blocks: " + state})
+				ag.Thinking = thinking
+				session.SaveThinkingLevel(thinking)
+				u.SetThinkingLevel(thinking)
+				u.Render(event.Event{Kind: event.Notice, Text: "thinking: " + thinking + " (Shift+Tab cycles; available: " + strings.Join(levels, ", ") + ")"})
 				continue
 			case "expand":
 				u.Expand()

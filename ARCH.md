@@ -187,6 +187,7 @@ type Request struct {
     System   string
     Messages []Message
     Tools    []ToolSpec
+    Thinking string // reasoning level: off/minimal/low/medium/high/xhigh/max
 }
 
 type Usage struct {
@@ -220,6 +221,10 @@ type Provider interface {
   config dir (`$XDG_CONFIG_HOME/pigo`, default `~/.config/pigo`). The store is
   read from there first and then from Pi's agent dir (`PI_CODING_AGENT_DIR`,
   default `~/.pi/agent`), because Pi writes the catalog pigo does not fetch.
+- `models/thinking.go`: the ordered levels (`off`..`max`), per-model support
+  from `reasoning` plus `thinkingLevelMap` (a null mapping disables a level;
+  `xhigh`/`max` need an explicit mapping), clamping, and cycling. Reasoning
+  models default to `medium`.
 - `providers/providers.go`: the provider list, standard env vars, credential
   resolution (`ResolveKey`), and `AuthenticatedModels`.
 - `fantasy/fantasy.go`: `NewFantasy`, `NewFantasyEntry`, `NewFromRef`, and
@@ -230,6 +235,7 @@ type Provider interface {
 - Fantasy is a **preview** library and its API changes. Before writing the adapter, read the current Fantasy README, `pkg.go.dev/charm.land/fantasy`, and its `examples/` directory. Do not rely on memory of its API.
 - Fantasy ships its own multi-step agent. **We do not use it for the loop.** We own the loop (section 6.3) so that compaction, cancellation, and approval stay under our control. Use Fantasy's lower-level language-model streaming API through the adapter. If that proves impractical, the fallback is to run one Fantasy step per `Stream` call, but the `Provider` interface must not change.
 - Tool definitions are passed to Fantasy as provider-visible schemas only. Execution stays in our `tools` package.
+- Reasoning level (`llm.Request.Thinking`) becomes provider options in `fantasy/thinking.go`: Anthropic output effort (adaptive thinking), OpenAI/OpenAI-compatible/OpenRouter reasoning effort, or a Google thinking level. A model's `thinkingLevelMap` overrides the native value per level. `off` sends no options, except OpenAI-style providers, which get effort `none`.
 - Provider selection: `PIGO_PROVIDER` (e.g. `anthropic`, `openai`, `openrouter`) and `PIGO_MODEL` env vars, or `-m provider/model`. API keys resolve in a fixed order: `auth.json` (written by `/login`), then the provider's standard env var, then the `models.json` entry's `apiKey` source (literal, `$ENV`, or `!command`). The `auth` package owns the file and the resolver; `llm` only calls it.
 - Isolation rule: if Fantasy is ever replaced, only `internal/fantasy` changes.
 
@@ -382,7 +388,7 @@ All terminal concerns live here and only here.
 | Event | Rendering |
 |-------|-----------|
 | `TextDelta` | Streamed to stdout (see below). |
-| `ThinkingDelta` | A completed reasoning block, rendered dim and italic. Hidden when thinking is toggled off (`/thinking` or Ctrl+T) or when output is not a TTY. |
+| `ThinkingDelta` | A completed reasoning block, rendered dim and italic. Hidden when display is toggled off (Ctrl+T) or when output is not a TTY. |
 | `ToolStart` | One dim line: `> bash: go test ./...` (tool name plus a short arg summary, truncated to terminal width). For `edit` and `write`, a unified diff preview of the pending change follows, computed without running the tool and capped by `UIDiffLines`. |
 | `ToolResult` | Dim, indented, first N lines of output (`UIToolLines` config), with `... (+M lines)` if cut. Errors in red. `edit` and `write` show a one-line status instead of repeating the preview. Full output still goes to the model. `/expand` reprints an untruncated preview. |
 | `TurnEnd` | Blank line; optional dim token usage footer. |
@@ -412,7 +418,7 @@ All terminal concerns live here and only here.
 | `/compact` | Force compaction (once implemented) |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
-| `/thinking` | Toggle reasoning-block display (also Ctrl+T). With `on`/`off`, set it explicitly. |
+| `/thinking [level]` | Set the reasoning level (clamped to the model's support); no argument prints the current level and the available ones. Shift+Tab cycles the level. The chosen level is remembered in the state dir. Ctrl+T separately toggles block display. |
 | `/login` | List providers with a key-status marker and store an API key for the selected one. `/login <provider>` skips the list. OAuth/subscription providers report that they are unsupported. |
 | `/logout` | List providers with a stored key (an auth.json credential or a literal `apiKey` in pigo's `models.json`) and remove the selected one. Clearing the `models.json` key makes the provider stop appearing in the model picker; `$ENV` and `!command` sources are configuration and are left alone. |
 
@@ -478,6 +484,8 @@ const (
     KeepRecentMsgs  = 8
     UIToolLines     = 8
     UIDiffLines     = 20
+    ShowThinking    = true    // show reasoning blocks; Ctrl+T toggles
+    DefaultThinking = "medium" // startup reasoning level
     RenderMode      = "block" // "block" or "raw"
     DefaultProvider = "anthropic"
     DefaultModel    = "" // empty: require PIGO_MODEL or -m

@@ -15,44 +15,47 @@ import (
 // models-store.json, with provider defaults and modelOverrides merged in.
 // Fields are exactly the ones in Pi's schema; unknown fields are ignored.
 type ModelEntry struct {
-	Provider      string
-	Model         string
-	Name          string
-	BaseURL       string
-	API           string
-	APIKey        string // source: literal, $ENV/${ENV}, or !command
-	Headers       map[string]string
-	Compat        json.RawMessage
-	Reasoning     bool
-	Input         []string
-	ContextWindow int
-	MaxTokens     int
+	Provider         string
+	Model            string
+	Name             string
+	BaseURL          string
+	API              string
+	APIKey           string // source: literal, $ENV/${ENV}, or !command
+	Headers          map[string]string
+	Compat           json.RawMessage
+	Reasoning        bool
+	ThinkingLevelMap map[string]*string // level -> provider-native value; nil value means unsupported
+	Input            []string
+	ContextWindow    int
+	MaxTokens        int
 }
 
 // Ref is the canonical "provider/model" reference.
 func (e ModelEntry) Ref() string { return e.Provider + "/" + e.Model }
 
 type modelDefinition struct {
-	ID            string            `json:"id"`
-	Name          string            `json:"name"`
-	API           string            `json:"api"`
-	BaseURL       string            `json:"baseUrl"`
-	Reasoning     bool              `json:"reasoning"`
-	Input         []string          `json:"input"`
-	ContextWindow int               `json:"contextWindow"`
-	MaxTokens     int               `json:"maxTokens"`
-	Headers       map[string]string `json:"headers"`
-	Compat        json.RawMessage   `json:"compat"`
+	ID               string             `json:"id"`
+	Name             string             `json:"name"`
+	API              string             `json:"api"`
+	BaseURL          string             `json:"baseUrl"`
+	Reasoning        bool               `json:"reasoning"`
+	ThinkingLevelMap map[string]*string `json:"thinkingLevelMap"`
+	Input            []string           `json:"input"`
+	ContextWindow    int                `json:"contextWindow"`
+	MaxTokens        int                `json:"maxTokens"`
+	Headers          map[string]string  `json:"headers"`
+	Compat           json.RawMessage    `json:"compat"`
 }
 
 type modelOverride struct {
-	Name          *string           `json:"name"`
-	Reasoning     *bool             `json:"reasoning"`
-	Input         []string          `json:"input"`
-	ContextWindow *int              `json:"contextWindow"`
-	MaxTokens     *int              `json:"maxTokens"`
-	Headers       map[string]string `json:"headers"`
-	Compat        json.RawMessage   `json:"compat"`
+	Name             *string            `json:"name"`
+	Reasoning        *bool              `json:"reasoning"`
+	ThinkingLevelMap map[string]*string `json:"thinkingLevelMap"`
+	Input            []string           `json:"input"`
+	ContextWindow    *int               `json:"contextWindow"`
+	MaxTokens        *int               `json:"maxTokens"`
+	Headers          map[string]string  `json:"headers"`
+	Compat           json.RawMessage    `json:"compat"`
 }
 
 type providerConfig struct {
@@ -74,11 +77,11 @@ type modelsFile struct {
 // provider's standard API-key environment variable. They keep the selector
 // useful before any models.json exists.
 var BuiltinModels = []ModelEntry{
-	{Provider: "anthropic", Model: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5"},
-	{Provider: "openai", Model: "gpt-5", Name: "GPT-5"},
-	{Provider: "google", Model: "gemini-2.5-pro", Name: "Gemini 2.5 Pro"},
-	{Provider: "openrouter", Model: "anthropic/claude-sonnet-4.5", Name: "Claude Sonnet 4.5 (OpenRouter)"},
-	{Provider: "opencode-go", Model: "glm-5.2", Name: "GLM-5.2 (OpenCode Go)", BaseURL: "https://opencode.ai/zen/go/v1", API: "openai-completions"},
+	{Provider: "anthropic", Model: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", Reasoning: true},
+	{Provider: "openai", Model: "gpt-5", Name: "GPT-5", Reasoning: true},
+	{Provider: "google", Model: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Reasoning: true},
+	{Provider: "openrouter", Model: "anthropic/claude-sonnet-4.5", Name: "Claude Sonnet 4.5 (OpenRouter)", Reasoning: true},
+	{Provider: "opencode-go", Model: "glm-5.2", Name: "GLM-5.2 (OpenCode Go)", BaseURL: "https://opencode.ai/zen/go/v1", API: "openai-completions", Reasoning: true},
 }
 
 // configDir returns pigo's config directory, $XDG_CONFIG_HOME/pigo or
@@ -287,18 +290,19 @@ func flattenProviders(providers map[string]providerConfig) []ModelEntry {
 				continue
 			}
 			e := ModelEntry{
-				Provider:      name,
-				Model:         m.ID,
-				Name:          cmp.Or(m.Name, m.ID),
-				BaseURL:       cmp.Or(m.BaseURL, p.BaseURL),
-				API:           cmp.Or(m.API, p.API),
-				APIKey:        p.APIKey,
-				Headers:       mergeHeaders(p.Headers, m.Headers),
-				Compat:        firstRaw(m.Compat, p.Compat),
-				Reasoning:     m.Reasoning,
-				Input:         m.Input,
-				ContextWindow: m.ContextWindow,
-				MaxTokens:     m.MaxTokens,
+				Provider:         name,
+				Model:            m.ID,
+				Name:             cmp.Or(m.Name, m.ID),
+				BaseURL:          cmp.Or(m.BaseURL, p.BaseURL),
+				API:              cmp.Or(m.API, p.API),
+				APIKey:           p.APIKey,
+				Headers:          mergeHeaders(p.Headers, m.Headers),
+				Compat:           firstRaw(m.Compat, p.Compat),
+				Reasoning:        m.Reasoning,
+				ThinkingLevelMap: m.ThinkingLevelMap,
+				Input:            m.Input,
+				ContextWindow:    m.ContextWindow,
+				MaxTokens:        m.MaxTokens,
 			}
 			if o, ok := p.ModelOverrides[m.ID]; ok {
 				if o.Name != nil {
@@ -306,6 +310,9 @@ func flattenProviders(providers map[string]providerConfig) []ModelEntry {
 				}
 				if o.Reasoning != nil {
 					e.Reasoning = *o.Reasoning
+				}
+				if o.ThinkingLevelMap != nil {
+					e.ThinkingLevelMap = o.ThinkingLevelMap
 				}
 				if o.Input != nil {
 					e.Input = o.Input

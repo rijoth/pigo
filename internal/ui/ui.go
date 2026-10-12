@@ -50,6 +50,7 @@ type UI struct {
 	contextWindow int
 	model         string
 	project       string
+	thinking      string
 	failed        bool
 	showThinking  bool
 	inTotal       int
@@ -113,6 +114,17 @@ func (u *UI) SetThinking(on bool) { u.showThinking = on }
 func (u *UI) ToggleThinking() bool {
 	u.showThinking = !u.showThinking
 	return u.showThinking
+}
+
+// SetThinkingLevel records the current reasoning level for the footer.
+func (u *UI) SetThinkingLevel(level string) { u.thinking = level }
+
+// OnCycleThinking registers the Shift+Tab handler, which advances the
+// reasoning level and returns the new one. It is a no-op when not interactive.
+func (u *UI) OnCycleThinking(fn func() string) {
+	if u.editor != nil {
+		u.editor.onCycleThinking = fn
+	}
 }
 
 // SetModel supplies the model label shown before the prompt marker. Empty
@@ -315,6 +327,9 @@ func (u *UI) usageLine(usage *llm.Usage) string {
 	parts = append(parts, fmt.Sprintf("tokens: %s in / %s out", humanTokens(usage.InputTokens), humanTokens(usage.OutputTokens)))
 	if u.contextWindow > 0 {
 		parts = append(parts, fmt.Sprintf("context: %s / %s (%d%%)", humanTokens(usage.InputTokens), humanTokens(u.contextWindow), usage.InputTokens*100/u.contextWindow))
+	}
+	if u.thinking != "" && u.thinking != "off" {
+		parts = append(parts, "thinking: "+u.thinking)
 	}
 	return strings.Join(parts, "  ")
 }

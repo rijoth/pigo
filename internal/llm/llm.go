@@ -53,11 +53,13 @@ type ToolSpec struct {
 	Schema      json.RawMessage `json:"schema"`
 }
 
-// Request is one model call.
+// Request is one model call. Thinking is the reasoning level (for example
+// "off", "low", "medium"); empty means the provider default.
 type Request struct {
 	System   string
 	Messages []Message
 	Tools    []ToolSpec
+	Thinking string
 }
 
 // Usage reports token consumption for a call.

@@ -148,13 +148,7 @@ func Resolve(dir, ref string) (string, error) {
 func ModelRefPath() string { return filepath.Join(StateDir(), "model") }
 
 // LoadModelRef reads the remembered model reference, or "" when none is set.
-func LoadModelRef() string {
-	b, err := os.ReadFile(ModelRefPath())
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
-}
+func LoadModelRef() string { return readState(ModelRefPath()) }
 
 // SaveModelRef remembers ref as the last selected model. Failures are ignored:
 // the choice is a convenience, not session state.
@@ -162,11 +156,35 @@ func SaveModelRef(ref string) {
 	if ref == "" || ref == "none" {
 		return
 	}
-	dir := StateDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	writeState(ModelRefPath(), ref)
+}
+
+// ThinkingLevelPath returns the file that remembers the last reasoning level.
+func ThinkingLevelPath() string { return filepath.Join(StateDir(), "thinking") }
+
+// LoadThinkingLevel reads the remembered reasoning level, or "" when unset.
+func LoadThinkingLevel() string { return readState(ThinkingLevelPath()) }
+
+// SaveThinkingLevel remembers level as the last selected reasoning level.
+func SaveThinkingLevel(level string) {
+	if level != "" {
+		writeState(ThinkingLevelPath(), level)
+	}
+}
+
+func readState(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func writeState(path, value string) {
+	if err := os.MkdirAll(StateDir(), 0o700); err != nil {
 		return
 	}
-	_ = os.WriteFile(ModelRefPath(), []byte(ref+"\n"), 0o600)
+	_ = os.WriteFile(path, []byte(value+"\n"), 0o600)
 }
 
 // New creates a fresh session file in dir.
