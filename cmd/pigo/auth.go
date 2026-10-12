@@ -71,8 +71,9 @@ func handleLogin(u *ui.UI, arg, authPath string, rebuild func(string)) {
 }
 
 // handleLogout implements /logout: pick one provider with a stored credential
-// and remove it.
-func handleLogout(u *ui.UI, authPath string) {
+// and remove it. rebuild is called after a successful removal so the picker
+// and completion drop the now-unauthenticated provider's models.
+func handleLogout(u *ui.UI, authPath string, rebuild func()) {
 	creds, err := auth.Load(authPath)
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
@@ -110,6 +111,7 @@ func handleLogout(u *ui.UI, authPath string) {
 		return
 	}
 	u.Render(event.Event{Kind: event.Notice, Text: "logged out from " + ref})
+	rebuild()
 }
 
 // providerLabel renders the status marker shown next to a provider.

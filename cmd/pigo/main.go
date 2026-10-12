@@ -324,7 +324,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				u.Expand()
 				continue
 			case "logout":
-				handleLogout(u, auth.Path())
+				handleLogout(u, auth.Path(), func() { u.SetModels(pickerRefs()) })
 				continue
 			case "resume":
 				if resumeSession(u, &sess, &history, &ids, &lastInput, banner(modelLabel), projectDir, setSession) {
