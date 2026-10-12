@@ -5,27 +5,21 @@ var ThinkingLevels = []string{"off", "minimal", "low", "medium", "high", "xhigh"
 
 // SupportedThinkingLevels returns the levels the entry accepts, in order. A
 // model without reasoning supports only "off". xhigh and max require an
-// explicit thinkingLevelMap value; a null mapping marks a level unsupported.
+// explicit thinkingLevelMap value. A null mapping for a standard level means
+// "no explicit provider value", not "unsupported": the level stays selectable
+// and uses the provider default.
 func (e ModelEntry) SupportedThinkingLevels() []string {
 	if !e.Reasoning {
 		return []string{"off"}
 	}
 	levels := make([]string, 0, len(ThinkingLevels))
 	for _, level := range ThinkingLevels {
-		if v, ok := e.ThinkingLevelMap[level]; ok {
-			if v == nil {
+		if level == "xhigh" || level == "max" {
+			if v, ok := e.ThinkingLevelMap[level]; !ok || v == nil {
 				continue
 			}
-			levels = append(levels, level)
-			continue
-		}
-		if level == "xhigh" || level == "max" {
-			continue
 		}
 		levels = append(levels, level)
-	}
-	if len(levels) == 0 {
-		return []string{"off"}
 	}
 	return levels
 }

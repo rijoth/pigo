@@ -222,9 +222,10 @@ type Provider interface {
   read from there first and then from Pi's agent dir (`PI_CODING_AGENT_DIR`,
   default `~/.pi/agent`), because Pi writes the catalog pigo does not fetch.
 - `models/thinking.go`: the ordered levels (`off`..`max`), per-model support
-  from `reasoning` plus `thinkingLevelMap` (a null mapping disables a level;
-  `xhigh`/`max` need an explicit mapping), clamping, and cycling. Reasoning
-  models default to `medium`.
+  from `reasoning` plus `thinkingLevelMap` (a null mapping for a standard level
+  means "no explicit provider value", so the level stays selectable and uses
+  the provider default; `xhigh`/`max` need an explicit mapping), clamping, and
+  cycling. Reasoning models default to `medium`.
 - `providers/providers.go`: the provider list, standard env vars, credential
   resolution (`ResolveKey`), and `AuthenticatedModels`.
 - `fantasy/fantasy.go`: `NewFantasy`, `NewFantasyEntry`, `NewFromRef`, and
@@ -235,7 +236,7 @@ type Provider interface {
 - Fantasy is a **preview** library and its API changes. Before writing the adapter, read the current Fantasy README, `pkg.go.dev/charm.land/fantasy`, and its `examples/` directory. Do not rely on memory of its API.
 - Fantasy ships its own multi-step agent. **We do not use it for the loop.** We own the loop (section 6.3) so that compaction, cancellation, and approval stay under our control. Use Fantasy's lower-level language-model streaming API through the adapter. If that proves impractical, the fallback is to run one Fantasy step per `Stream` call, but the `Provider` interface must not change.
 - Tool definitions are passed to Fantasy as provider-visible schemas only. Execution stays in our `tools` package.
-- Reasoning level (`llm.Request.Thinking`) becomes provider options in `fantasy/thinking.go`: Anthropic output effort (adaptive thinking), OpenAI/OpenAI-compatible/OpenRouter reasoning effort, or a Google thinking level. A model's `thinkingLevelMap` overrides the native value per level. `off` sends no options, except OpenAI-style providers, which get effort `none`.
+- Reasoning level (`llm.Request.Thinking`) becomes provider options in `fantasy/thinking.go`: Anthropic output effort (adaptive thinking), OpenAI/OpenAI-compatible/OpenRouter reasoning effort, or a Google thinking level. A model's `thinkingLevelMap` overrides the native value per level; a null mapping sends no options (provider default). `off` sends no options for Anthropic/Google and effort `none` for OpenAI-style providers.
 - Provider selection: `PIGO_PROVIDER` (e.g. `anthropic`, `openai`, `openrouter`) and `PIGO_MODEL` env vars, or `-m provider/model`. API keys resolve in a fixed order: `auth.json` (written by `/login`), then the provider's standard env var, then the `models.json` entry's `apiKey` source (literal, `$ENV`, or `!command`). The `auth` package owns the file and the resolver; `llm` only calls it.
 - Isolation rule: if Fantasy is ever replaced, only `internal/fantasy` changes.
 

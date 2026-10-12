@@ -6,9 +6,14 @@ import (
 )
 
 func TestSupportedThinkingLevels(t *testing.T) {
-	off := "off"
-	unsupported := ModelEntry{Reasoning: true, ThinkingLevelMap: map[string]*string{"low": nil}}
-	withXHigh := ModelEntry{Reasoning: true, ThinkingLevelMap: map[string]*string{"xhigh": &off}}
+	xhigh := "xhigh"
+	withXHigh := ModelEntry{Reasoning: true, ThinkingLevelMap: map[string]*string{"xhigh": &xhigh}}
+	// The opencode-go/deepseek-v4.1-flash map: null standard levels stay
+	// selectable, xhigh stays out because it has no explicit value.
+	opencode := ModelEntry{Reasoning: true, ThinkingLevelMap: map[string]*string{
+		"off": nil, "minimal": nil, "low": strPtr("low"), "medium": nil,
+		"high": strPtr("high"), "xhigh": nil, "max": strPtr("max"),
+	}}
 
 	cases := []struct {
 		name  string
@@ -17,7 +22,7 @@ func TestSupportedThinkingLevels(t *testing.T) {
 	}{
 		{"no reasoning", ModelEntry{}, "off"},
 		{"default", ModelEntry{Reasoning: true}, "off,minimal,low,medium,high"},
-		{"null level", unsupported, "off,minimal,medium,high"},
+		{"null standard levels", opencode, "off,minimal,low,medium,high,max"},
 		{"xhigh mapped", withXHigh, "off,minimal,low,medium,high,xhigh"},
 	}
 	for _, tc := range cases {
@@ -27,6 +32,8 @@ func TestSupportedThinkingLevels(t *testing.T) {
 		}
 	}
 }
+
+func strPtr(s string) *string { return &s }
 
 func TestClampThinkingLevel(t *testing.T) {
 	entry := ModelEntry{Reasoning: true}

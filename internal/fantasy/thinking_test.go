@@ -46,9 +46,21 @@ func TestThinkingOptions(t *testing.T) {
 	}
 
 	mapped := "low"
-	over := &fantasyProvider{provider: "anthropic", reasoning: true, levelMap: map[string]string{"medium": mapped}}
+	over := &fantasyProvider{provider: "anthropic", reasoning: true, levelMap: map[string]*string{"medium": &mapped}}
 	mo, _ := over.thinkingOptions("medium")[anthropic.Name].(*anthropic.ProviderOptions)
 	if mo == nil || mo.Effort == nil || *mo.Effort != anthropic.EffortLow {
 		t.Fatalf("mapped anthropic medium = %+v", mo)
+	}
+
+	// A null mapping means "no explicit provider value": no options, so the
+	// provider default applies (this is how opencode-go maps medium).
+	null := &fantasyProvider{provider: "openai", reasoning: true, levelMap: map[string]*string{"medium": nil, "off": nil}}
+	if opts := null.thinkingOptions("medium"); opts != nil {
+		t.Fatalf("null medium sent options: %+v", opts)
+	}
+	// off still tries to disable even when the map has no explicit value.
+	offOff, ok := null.thinkingOptions("off")[openai.Name].(*openai.ProviderOptions)
+	if !ok || offOff.ReasoningEffort == nil || *offOff.ReasoningEffort != openai.ReasoningEffortNone {
+		t.Fatalf("null off = %+v", offOff)
 	}
 }

@@ -38,37 +38,30 @@ func entryProvider(e models.ModelEntry) string {
 	}
 }
 
-// levelOverrides flattens a model's thinkingLevelMap to native strings,
-// dropping null entries (which mean "unsupported").
-func levelOverrides(m map[string]*string) map[string]string {
-	if len(m) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(m))
-	for level, v := range m {
-		if v != nil {
-			out[level] = *v
-		}
-	}
-	return out
-}
-
 // thinkingOptions maps a reasoning level to provider-specific options. It
-// returns nil when reasoning is unsupported or the level is off, so the
-// request keeps the provider's default.
+// returns nil when reasoning is unsupported, the level is a no-op, or the
+// model maps it to null (no explicit provider value), so the request keeps
+// the provider's default.
 func (f *fantasyProvider) thinkingOptions(level string) fantasy.ProviderOptions {
 	if !f.reasoning || level == "" {
 		return nil
 	}
 	native := level
-	if v, ok := f.levelMap[level]; ok {
-		native = v
-	}
-	if level == "off" {
-		if v, ok := f.levelMap["off"]; ok {
-			native = v
+	switch {
+	case level == "off":
+		// Disabling is provider-specific: a mapped value wins, otherwise
+		// OpenAI-style providers get "none".
+		if v, ok := f.levelMap["off"]; ok && v != nil {
+			native = *v
 		} else {
 			native = "none"
+		}
+	default:
+		if v, ok := f.levelMap[level]; ok {
+			if v == nil {
+				return nil // no explicit value: leave the provider default
+			}
+			native = *v
 		}
 	}
 	switch f.provider {

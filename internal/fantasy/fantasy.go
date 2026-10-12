@@ -24,9 +24,9 @@ import (
 
 type fantasyProvider struct {
 	model     fantasy.LanguageModel
-	provider  string            // fantasy provider name: anthropic, openai, openrouter, google, openai-compat
-	levelMap  map[string]string // thinkingLevelMap overrides from models.json
-	reasoning bool              // model declares reasoning support
+	provider  string             // fantasy provider name: anthropic, openai, openrouter, google, openai-compat
+	levelMap  map[string]*string // thinkingLevelMap from models.json; nil value means no explicit provider value
+	reasoning bool               // model declares reasoning support
 }
 
 // Version is the pigo version advertised in the User-Agent header.
@@ -102,7 +102,7 @@ func NewFantasyEntry(e models.ModelEntry, session func() string) (llm.Provider, 
 	if err != nil {
 		return nil, fmt.Errorf("model %q: %w", e.Model, err)
 	}
-	return &fantasyProvider{model: model, provider: entryProvider(e), levelMap: levelOverrides(e.ThinkingLevelMap), reasoning: e.Reasoning}, nil
+	return &fantasyProvider{model: model, provider: entryProvider(e), levelMap: e.ThinkingLevelMap, reasoning: e.Reasoning}, nil
 }
 
 // NewFromRef builds a provider from a models.json reference. found is false
