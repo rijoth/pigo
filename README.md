@@ -32,7 +32,7 @@ to be enough for most software work.
 
 - Go 1.26 or newer to build.
 - An API key for at least one provider.
-- Linux (developed on Void Linux). macOS should work. Windows is untested.
+- Linux. macOS should work. Windows is untested.
 
 ## Build
 
