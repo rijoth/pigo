@@ -442,6 +442,11 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				history, ids, lastInput = h, newIDs, 0
 			}
 		}
+		// A manual /compact only compacts; do not send the command line itself
+		// as a prompt. force is set only by that command.
+		if force {
+			continue
+		}
 		line = mention.Expand(line)
 		if u.Interactive() {
 			fmt.Fprintln(os.Stdout)
