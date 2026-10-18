@@ -1,6 +1,6 @@
 BIN := pigo
 
-.PHONY: build test vet fmt loc clean smoke
+.PHONY: build test vet fmt loc clean smoke release snapshot
 
 build:
 	go build -o $(BIN) ./cmd/pigo
@@ -25,3 +25,9 @@ loc:
 
 smoke:
 	go run ./cmd/pigo -p "say hello"
+
+release:
+	goreleaser release --clean
+
+snapshot:
+	goreleaser release --snapshot --clean

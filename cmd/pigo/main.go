@@ -31,18 +31,26 @@ import (
 	"pigo/internal/ui"
 )
 
+// version is set at build time by GoReleaser via -ldflags.
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
 
 func run() int {
 	prompt := flag.String("p", "", "run one prompt non-interactively (use - to read stdin)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	cont := flag.Bool("c", false, "continue the most recent session")
 	resume := flag.String("r", "", "resume a session by file path or project id")
 	modelFlag := flag.String("m", "", "model as provider/model")
 	confirm := flag.Bool("confirm", false, "ask before running each bash call")
 	jsonOut := flag.Bool("json", false, "write one JSON event per line (requires -p)")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("pigo " + version)
+		return 0
+	}
 	if *jsonOut && *prompt == "" {
 		fmt.Fprintln(os.Stderr, "pigo: -json requires -p")
 		return 2
