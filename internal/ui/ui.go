@@ -315,6 +315,17 @@ func (u *UI) renderTextBlock(text string) {
 	u.md.Flush()
 }
 
+// Compaction prints the result of a deterministic compaction: a dim stats
+// header followed by the generated summary, so the user can inspect exactly
+// what replaced the older history.
+func (u *UI) Compaction(summary, stats string) {
+	fmt.Fprintln(u.out, u.styles.dim.Render("· compacted: "+stats))
+	if strings.TrimSpace(summary) == "" {
+		return
+	}
+	u.renderTextBlock(summary)
+}
+
 // prompt renders the primary prompt for the line currently being edited. The
 // label is the model, or "!" while the line starts with a shell escape; the
 // marker is accent-colored, yellow in shell mode, and red after a failed turn.

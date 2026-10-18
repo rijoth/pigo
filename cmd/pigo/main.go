@@ -251,6 +251,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 	ag.OnCompact = func(firstKept int, summary string) {
 		ids = persistCompaction(sess, ids, firstKept, summary)
 		lastInput = 0
+		u.Compaction(summary, "overflow recovery")
 	}
 	contextWindow := models.ContextWindow(modelLabel)
 	compactAt := compactLimit(contextWindow)
@@ -766,6 +767,6 @@ func runCompact(sess *session.Session, history []llm.Message, ids []string, u *u
 		fmt.Fprintln(os.Stderr, "pigo: session:", err)
 	}
 	newIDs := append([]string{""}, ids[res.FirstKept:]...)
-	u.Render(event.Event{Kind: event.Notice, Text: "compacted: " + compact.FormatStats(res.Stats)})
+	u.Compaction(res.Summary, compact.FormatStats(res.Stats))
 	return newHistory, newIDs, true, res.Prompt
 }

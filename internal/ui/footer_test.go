@@ -27,3 +27,17 @@ func TestTurnEndHasNoModel(t *testing.T) {
 		t.Fatalf("footer not closed by a rule: %q", got)
 	}
 }
+
+// TestCompactionShowsSummary checks that compaction prints the generated
+// summary body, not just the one-line stats.
+func TestCompactionShowsSummary(t *testing.T) {
+	u, b := newTestUI()
+	u.Compaction("[Session Goal]\n- fix the login bug", "kept 1/2 turns, ~5.2k tok")
+	out := b.String()
+	if !strings.Contains(out, "· compacted: kept 1/2 turns") {
+		t.Fatalf("missing stats header: %q", out)
+	}
+	if !strings.Contains(out, "[Session Goal]") || !strings.Contains(out, "fix the login bug") {
+		t.Fatalf("missing summary body: %q", out)
+	}
+}
