@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"pigo/internal/compact"
 	"pigo/internal/event"
 	"pigo/internal/llm"
 	"pigo/internal/tools"
@@ -217,75 +218,6 @@ func TestRunMaxSteps(t *testing.T) {
 	}
 }
 
-func TestCompact(t *testing.T) {
-	p := &fakeProvider{script: [][]llm.Delta{{{Text: "summary"}}}}
-	history := []llm.Message{
-		{Role: llm.RoleUser, Text: "one"},
-		{Role: llm.RoleAssistant, Text: "a"},
-		{Role: llm.RoleUser, Text: "two"},
-		{Role: llm.RoleAssistant, Text: "b"},
-	}
-	newHistory, summary, replaces, err := Compact(context.Background(), p, "sys", history, 2, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary != "summary" || replaces != 2 {
-		t.Fatalf("summary=%q replaces=%d", summary, replaces)
-	}
-	if len(newHistory) != 3 || newHistory[0].Text != "[Earlier conversation summary]\nsummary" {
-		t.Fatalf("new history: %+v", newHistory)
-	}
-}
-
-func TestCompactStoresTouchedFiles(t *testing.T) {
-	p := &fakeProvider{script: [][]llm.Delta{{{Text: "summary"}}}}
-	call := func(name string, path string) llm.ToolCall {
-		b, _ := json.Marshal(map[string]string{"path": path})
-		return llm.ToolCall{ID: "1", Name: name, Args: b}
-	}
-	history := []llm.Message{
-		{Role: llm.RoleUser, Text: "one"},
-		{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("edit", "a.go")}},
-		{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "x"}}},
-		{Role: llm.RoleUser, Text: "two"},
-		{Role: llm.RoleAssistant, Text: "b"},
-	}
-	newHistory, summary, _, err := Compact(context.Background(), p, "sys", history, 2, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(summary, filesMarker) || !strings.Contains(summary, "a.go") {
-		t.Fatalf("stored summary missing files: %q", summary)
-	}
-	if !strings.Contains(newHistory[0].Text, "- a.go") {
-		t.Fatalf("history summary missing files: %q", newHistory[0].Text)
-	}
-}
-
-func TestTouchedFilesCarryAcrossCompactions(t *testing.T) {
-	call := func(name, path string) llm.ToolCall {
-		b, _ := json.Marshal(map[string]string{"path": path})
-		return llm.ToolCall{ID: "1", Name: name, Args: b}
-	}
-	first := []llm.Message{
-		{Role: llm.RoleUser, Text: "one"},
-		{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("read", "a.go")}},
-		{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "x"}}},
-	}
-	if got := touchedFiles(first); len(got) != 1 || got[0] != "a.go" {
-		t.Fatalf("first files: %v", got)
-	}
-	summaryMsg := llm.Message{Role: llm.RoleUser, Text: "[Earlier conversation summary]\nsummary" + formatFiles(touchedFiles(first))}
-	second := append([]llm.Message{summaryMsg},
-		llm.Message{Role: llm.RoleAssistant, Calls: []llm.ToolCall{call("write", "b.go")}},
-		llm.Message{Role: llm.RoleTool, Results: []llm.ToolResult{{CallID: "1", Content: "y"}}},
-	)
-	got := touchedFiles(second)
-	if len(got) != 2 || got[0] != "a.go" || got[1] != "b.go" {
-		t.Fatalf("cumulative files: %v", got)
-	}
-}
-
 // flakyProvider fails the first fails Stream calls and the next streamErrs
 // streams before yielding script.
 type flakyProvider struct {
@@ -374,8 +306,8 @@ func TestRunNoRetryAfterOutput(t *testing.T) {
 	}
 }
 
-// overflowHistory is long enough (relative to KeepRecent) that a user-role
-// boundary exists before the new message.
+// overflowHistory is long enough that a user-role boundary exists before the
+// message appended by Run.
 func overflowHistory() []llm.Message {
 	return []llm.Message{
 		{Role: llm.RoleUser, Text: "one"},
@@ -388,28 +320,30 @@ func overflowHistory() []llm.Message {
 func TestRunRecoversFromContextOverflow(t *testing.T) {
 	p := &fakeProvider{script: [][]llm.Delta{
 		{{Err: fmt.Errorf("request too large: %w", llm.ErrContextTooLarge)}},
-		{{Text: "summary"}},
 		{{Text: "ok"}},
 	}}
 	var compacted int
 	var summary string
 	a := &Agent{
-		Provider:   p,
-		Tools:      map[string]tools.Tool{},
-		MaxSteps:   5,
-		KeepRecent: 2,
-		OnCompact:  func(firstKept int, s string) { compacted, summary = firstKept, s },
+		Provider:       p,
+		Tools:          map[string]tools.Tool{},
+		MaxSteps:       5,
+		CompactOptions: compact.DefaultOptions(),
+		OnCompact:      func(firstKept int, s string) { compacted, summary = firstKept, s },
 	}
 	var events []event.Event
 	got, err := a.Run(context.Background(), overflowHistory(), "three", collect(&events))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.idx != 3 {
-		t.Fatalf("provider calls = %d, want 3", p.idx)
+	if p.idx != 2 {
+		t.Fatalf("provider calls = %d, want 2 (deterministic, no summarization call)", p.idx)
 	}
-	if compacted != 2 || summary != "summary" {
-		t.Fatalf("OnCompact(%d, %q), want (2, summary)", compacted, summary)
+	if compacted != 2 {
+		t.Fatalf("OnCompact firstKept = %d, want 2", compacted)
+	}
+	if summary == "" || !strings.Contains(summary, "[user]") {
+		t.Fatalf("summary not deterministic sections: %q", summary)
 	}
 	if len(got) != 5 || !strings.HasPrefix(got[0].Text, "[Earlier conversation summary]") {
 		t.Fatalf("recovered history: %+v", got)
@@ -429,21 +363,20 @@ func TestRunRecoversFromContextOverflow(t *testing.T) {
 func TestRunRecoversOnlyOnce(t *testing.T) {
 	p := &fakeProvider{script: [][]llm.Delta{
 		{{Err: llm.ErrContextTooLarge}},
-		{{Text: "summary"}},
 		{{Err: llm.ErrContextTooLarge}},
 	}}
-	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, KeepRecent: 2}
+	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, CompactOptions: compact.DefaultOptions()}
 	if _, err := a.Run(context.Background(), overflowHistory(), "three", func(event.Event) {}); !errors.Is(err, llm.ErrContextTooLarge) {
 		t.Fatalf("err = %v, want ErrContextTooLarge", err)
 	}
-	if p.idx != 3 {
-		t.Fatalf("provider calls = %d, want 3 (one recovery only)", p.idx)
+	if p.idx != 2 {
+		t.Fatalf("provider calls = %d, want 2 (one recovery only)", p.idx)
 	}
 }
 
 func TestRunContextOverflowWithoutBoundary(t *testing.T) {
 	p := &fakeProvider{script: [][]llm.Delta{{{Err: llm.ErrContextTooLarge}}}}
-	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, MaxRetries: 3, KeepRecent: 2}
+	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, MaxRetries: 3, CompactOptions: compact.DefaultOptions()}
 	if _, err := a.Run(context.Background(), nil, "hi", func(event.Event) {}); !errors.Is(err, llm.ErrContextTooLarge) {
 		t.Fatalf("err = %v, want ErrContextTooLarge", err)
 	}

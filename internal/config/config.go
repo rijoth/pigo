@@ -17,16 +17,27 @@ const (
 	MaxRetries      = 3
 	RetryBaseMs     = 500
 	RetryMaxMs      = 8_000
-	KeepRecentMsgs  = 8
-	UIToolLines     = 8
-	UIDiffLines     = 20       // cap on a tool change preview, /expand shows the rest
-	ShowThinking    = true     // render reasoning expanded; Ctrl+T collapses to one line
-	DefaultThinking = "medium" // startup reasoning level, same default as Pi
-	RenderMode      = "block"  // "block" or "raw"
-	Theme           = "dark"   // glamour/chroma style: "dark" or "light"
-	NarrowWidth     = 60       // below this, use the compact layout
-	DefaultProvider = "anthropic"
-	DefaultModel    = "" // empty: require PIGO_MODEL or -m
+
+	// Deterministic compaction (pi-vcc style). KeepTurns is the default number
+	// of recent user turns kept verbatim; an explicit /compact keep:N overrides.
+	KeepTurns                 = 1
+	SmartKeepTail             = true
+	MinSmartTailTokens        = 5_000
+	MaxSmartTailTokens        = 25_000
+	OversizedTailFactor       = 2.5
+	RankedBriefBudgetTokens   = 1_100
+	RankedBriefCeilingTokens  = 2_000
+	RankedBriefTokensPerBlock = 15
+	CharsPerToken             = 4.0
+	UIToolLines               = 8
+	UIDiffLines               = 20       // cap on a tool change preview, /expand shows the rest
+	ShowThinking              = true     // render reasoning expanded; Ctrl+T collapses to one line
+	DefaultThinking           = "medium" // startup reasoning level, same default as Pi
+	RenderMode                = "block"  // "block" or "raw"
+	Theme                     = "dark"   // glamour/chroma style: "dark" or "light"
+	NarrowWidth               = 60       // below this, use the compact layout
+	DefaultProvider           = "anthropic"
+	DefaultModel              = "" // empty: require PIGO_MODEL or -m
 )
 
 // Activity spinner. SpinnerFrames is braille; SpinnerASCIIFrames is the

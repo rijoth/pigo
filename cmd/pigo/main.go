@@ -16,6 +16,7 @@ import (
 
 	"pigo/internal/agent"
 	"pigo/internal/auth"
+	"pigo/internal/compact"
 	"pigo/internal/config"
 	"pigo/internal/event"
 	"pigo/internal/fantasy"
@@ -111,15 +112,15 @@ func run() int {
 	thinking := startupThinking(modelLabel)
 	u.SetThinkingLevel(thinking)
 	ag := &agent.Agent{
-		Provider:   provider,
-		Tools:      tools.Default(),
-		System:     system,
-		Thinking:   thinking,
-		MaxSteps:   config.MaxSteps,
-		MaxRetries: config.MaxRetries,
-		RetryBase:  time.Duration(config.RetryBaseMs) * time.Millisecond,
-		RetryMax:   time.Duration(config.RetryMaxMs) * time.Millisecond,
-		KeepRecent: config.KeepRecentMsgs,
+		Provider:       provider,
+		Tools:          tools.Default(),
+		System:         system,
+		Thinking:       thinking,
+		MaxSteps:       config.MaxSteps,
+		MaxRetries:     config.MaxRetries,
+		RetryBase:      time.Duration(config.RetryBaseMs) * time.Millisecond,
+		RetryMax:       time.Duration(config.RetryMaxMs) * time.Millisecond,
+		CompactOptions: compactOptions(),
 	}
 	if *confirm {
 		ag.Approve = func(call llm.ToolCall) bool {
@@ -438,14 +439,20 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 			}
 		}
 		if force || (compactAt > 0 && lastInput > compactAt) {
-			if h, newIDs, ok := compact(ag, sess, history, ids, u, compactArgs); ok {
+			h, newIDs, ok, followUp := runCompact(sess, history, ids, u, compactArgs, force)
+			if ok {
 				history, ids, lastInput = h, newIDs, 0
 			}
-		}
-		// A manual /compact only compacts; do not send the command line itself
-		// as a prompt. force is set only by that command.
-		if force {
-			continue
+			if force {
+				// /compact may carry a follow-up prompt to send after compacting.
+				if ok && followUp != "" {
+					line = followUp
+				} else {
+					continue
+				}
+			} else {
+				continue
+			}
 		}
 		line = mention.Expand(line)
 		if u.Interactive() {
@@ -524,10 +531,29 @@ func persistCompaction(sess *session.Session, ids []string, firstKept int, summa
 	if firstKept < len(ids) {
 		firstKeptID = ids[firstKept]
 	}
-	if err := sess.AppendCompaction(summary, firstKeptID); err != nil {
+	replaces := 0
+	if firstKeptID == "" {
+		replaces = firstKept
+	}
+	if err := sess.AppendCompaction(summary, firstKeptID, replaces); err != nil {
 		fmt.Fprintln(os.Stderr, "pigo: session:", err)
 	}
 	return append([]string{""}, ids[firstKept:]...)
+}
+
+// compactOptions builds the deterministic compaction settings from config.
+func compactOptions() compact.Options {
+	opts := compact.DefaultOptions()
+	opts.Keep = config.KeepTurns
+	opts.SmartKeep = config.SmartKeepTail
+	opts.MinSmartTailTokens = config.MinSmartTailTokens
+	opts.MaxSmartTailTokens = config.MaxSmartTailTokens
+	opts.OversizedTailFactor = config.OversizedTailFactor
+	opts.CharsPerToken = config.CharsPerToken
+	opts.RankedBudgetTokens = config.RankedBriefBudgetTokens
+	opts.RankedCeilingTokens = config.RankedBriefCeilingTokens
+	opts.RankedTokensPerBlock = config.RankedBriefTokensPerBlock
+	return opts
 }
 
 // compactLimit returns the input-token threshold that triggers compaction: a
@@ -604,14 +630,10 @@ func navigateTree(ag *agent.Agent, sess *session.Session, u *ui.UI, history *[]l
 		return
 	}
 	if abandoned := t.Abandoned(oldLeaf, id); len(abandoned) > 0 && u.Ask(fmt.Sprintf("summarize the %d messages you are leaving?", len(abandoned))) {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		u.StartSpinner()
-		summary, sumErr := agent.Summarize(ctx, ag.Provider, ag.System, abandoned)
+		summary := agent.Summarize(abandoned)
 		u.StopSpinner()
-		stop()
 		switch {
-		case sumErr != nil:
-			u.Render(event.Event{Kind: event.Error, Err: sumErr})
 		case summary == "":
 			u.Render(event.Event{Kind: event.Notice, Text: "summary was empty; skipped"})
 		default:
@@ -701,30 +723,49 @@ func resumeSession(u *ui.UI, sess **session.Session, history *[]llm.Message, ids
 	return true
 }
 
-// compact summarizes older messages. It reports whether history changed and
-// returns the history and record ids with the summary prepended.
-func compact(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, instructions string) ([]llm.Message, []string, bool) {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
+// compact deterministically summarizes older messages. It reports whether
+// history changed and returns the history, record ids, and any follow-up
+// prompt parsed from /compact <prompt>.
+func runCompact(sess *session.Session, history []llm.Message, ids []string, u *ui.UI, arg string, explicit bool) ([]llm.Message, []string, bool, string) {
+	keep, explicitKeep, prompt := compact.ParseArgs(arg)
+	opts := compactOptions()
+	if !explicit {
+		// Threshold-triggered compaction always uses the configured default.
+		keep, explicitKeep, prompt = config.KeepTurns, false, ""
+	}
+	opts.Keep = keep
+	opts.Explicit = explicitKeep
+
+	global := sess.GlobalIndex()
+	index := func(id string) int {
+		if v, ok := global[id]; ok {
+			return v
+		}
+		return -1
+	}
 	u.StartSpinner()
-	newHistory, summary, cut, err := agent.Compact(ctx, ag.Provider, ag.System, history, config.KeepRecentMsgs, instructions)
+	newHistory, res, err := compact.Compact(history, ids, keep, explicitKeep, prompt, index, opts)
 	u.StopSpinner()
 	if err != nil {
 		u.Render(event.Event{Kind: event.Error, Err: err})
-		return history, ids, false
+		return history, ids, false, ""
 	}
-	if cut == 0 {
+	if !res.OK {
 		u.Render(event.Event{Kind: event.Notice, Text: "nothing to compact"})
-		return history, ids, false
+		return history, ids, false, ""
 	}
-	firstKept := ""
-	if cut < len(ids) {
-		firstKept = ids[cut]
+	firstKeptID := ""
+	if res.FirstKept < len(ids) {
+		firstKeptID = ids[res.FirstKept]
 	}
-	if err := sess.AppendCompaction(summary, firstKept); err != nil {
+	replaces := 0
+	if firstKeptID == "" {
+		replaces = res.FirstKept
+	}
+	if err := sess.AppendCompaction(res.Summary, firstKeptID, replaces); err != nil {
 		fmt.Fprintln(os.Stderr, "pigo: session:", err)
 	}
-	newIDs := append([]string{""}, ids[cut:]...)
-	u.Render(event.Event{Kind: event.Notice, Text: "compacted context"})
-	return newHistory, newIDs, true
+	newIDs := append([]string{""}, ids[res.FirstKept:]...)
+	u.Render(event.Event{Kind: event.Notice, Text: "compacted: " + compact.FormatStats(res.Stats)})
+	return newHistory, newIDs, true, res.Prompt
 }

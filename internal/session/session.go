@@ -276,15 +276,46 @@ func (s *Session) Append(m llm.Message) (string, error) {
 }
 
 // AppendCompaction records a summary that replaces history before the message
-// with firstKeptID.
-func (s *Session) AppendCompaction(summary, firstKeptID string) error {
+// with firstKeptID. When firstKeptID is empty, replaces is the number of
+// leading history messages the summary subsumes: a value at least the current
+// length means "compact all" (keep no tail).
+func (s *Session) AppendCompaction(summary, firstKeptID string, replaces int) error {
 	id := shortID()
-	rec := record{Time: time.Now().UTC(), Type: "compaction", ID: id, ParentID: s.leaf, Summary: summary, FirstKeptID: firstKeptID}
+	rec := record{Time: time.Now().UTC(), Type: "compaction", ID: id, ParentID: s.leaf, Summary: summary, FirstKeptID: firstKeptID, Replaces: replaces}
 	if err := s.write(rec); err != nil {
 		return err
 	}
 	s.leaf = id
 	return nil
+}
+
+// GlobalIndex maps each message record id to its session-global index (its
+// position among message entries in file order). Ambiguous duplicate ids are
+// dropped fail-closed. It returns nil when the session cannot be parsed.
+func (s *Session) GlobalIndex() map[string]int {
+	t, err := parse(s.path)
+	if err != nil {
+		return nil
+	}
+	idx := map[string]int{}
+	ambiguous := map[string]bool{}
+	n := 0
+	for _, id := range t.Order {
+		node := t.Nodes[id]
+		if node == nil || node.Type != "message" || node.Message == nil {
+			continue
+		}
+		if id != "" {
+			if _, dup := idx[id]; dup {
+				delete(idx, id)
+				ambiguous[id] = true
+			} else if !ambiguous[id] {
+				idx[id] = n
+			}
+		}
+		n++
+	}
+	return idx
 }
 
 // AppendBranchSummary records a summary of the branch abandoned when moving

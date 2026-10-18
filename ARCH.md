@@ -72,8 +72,8 @@ It prints to normal terminal stdout (scrollback works, copy/paste works), reads 
 **Dependency direction (strict, enforced by review):**
 
 ```
-main -> ui, agent, session, config, auth, models, providers, fantasy, mention
-agent -> llm, tools, event
+main -> ui, agent, session, compact, config, auth, models, providers, fantasy, mention
+agent -> llm, tools, event, compact
 ui -> event, llm, config, markdown, selector, diff, mention
 markdown -> config
 selector -> (stdlib only)
@@ -84,6 +84,7 @@ fantasy -> llm, models, providers, auth, Fantasy
 llm -> (stdlib only)
 tools -> (stdlib only)
 session -> llm (types only)
+compact -> llm (types only)
 event -> llm (types only)
 config -> (stdlib only)
 auth -> (stdlib only)
@@ -385,9 +386,11 @@ sessions stay readable.
 ### 6.6 Context management and compaction
 
 - Track `InputTokens` from the last `Usage`. When it exceeds `CompactAtTokens` (config), compact **before the next request**.
-- Compaction = one extra LLM call (no tools) asking the model to summarize the older part of the conversation. Keep the most recent N messages verbatim. Replace the older part with a single user message containing the summary. Append the `compaction` record to the session.
+- Compaction is **deterministic**: no extra model call, no network. `internal/compact` ports pi-vcc's extraction and formatting pipeline. Older history is normalized into blocks, noise is filtered, structured sections are extracted (`[Session Goal]`, `[Files And Changes]`, `[Commits]`, `[Tracked Commands]`, `[Outstanding Context]`, `[User Preferences]`), and a ranked, sectioned brief transcript is rendered. The result replaces the older part with a single user message prefixed `[Earlier conversation summary]`; the raw summary is also appended to the session as a `compaction` record.
+- `keep:N` (leading or trailing) on `/compact` keeps N recent user turns verbatim; the default is `config.KeepTurns`. `keep:0` compacts everything. With no explicit `keep`, smart-keep grows the tail up to `MaxSmartTailTokens`, then a token-budget cut (mid-turn, `no_anchor` or `oversized_tail`) rescues sessions without a user-turn anchor. Any remaining `/compact` argument is sent as a follow-up prompt after compaction.
+- A compact-all record stores `first_kept_id=""` and `replaces=len(history)`; `session.branch` interprets `replaces>=len` as "drop every prior message and keep only the summary".
+- Summary `#N` refs use session-global message indices (`session.GlobalIndex`, file order). The overflow path passes no index map, so refs are omitted (fail-closed) rather than emitted window-relative.
 - Emit a `Notice` event when compaction runs.
-- **Milestone:** compaction is not required for the first working version. Build it after the core loop is solid (section 13).
 
 ### 6.7 `internal/ui`
 
@@ -427,7 +430,7 @@ All terminal concerns live here and only here.
 | `/exit` | Quit |
 | `/new` | Start a fresh session |
 | `/resume` | Pick another session in the current project; clears the screen and restores it |
-| `/compact` | Force compaction (once implemented) |
+| `/compact [keep:N] [prompt]` | Force deterministic compaction. `keep:N` keeps N recent user turns; any other text is sent as a follow-up prompt after compacting. |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
 | `/thinking [level]` | Set the reasoning level (clamped to the model's support); no argument prints the current level, the expanded/collapsed state, and the available levels. Shift+Tab cycles the level. The chosen level is remembered in the state dir. Ctrl+T separately toggles whether blocks render expanded or collapsed. |
@@ -597,6 +600,7 @@ pigo/
   cmd/pigo/main.go  auth.go
   internal/
     agent/     agent.go  agent_test.go
+    compact/   types.go  normalize.go  filternoise.go  content.go  format.go  brief.go  rank.go  token.go  goals.go  files.go  prefs.go  commits.go  tracked.go  buildsections.go  summarize.go  cut.go  args.go  compact.go
     auth/      auth.go  auth_test.go
     config/    config.go
     diff/      diff.go  diff_test.go
@@ -675,6 +679,7 @@ If a requested feature cannot be added this way without touching three or more p
 | `fantasy` | 200 | 350 |
 | `tools` | 300 | 450 |
 | `session` | 120 | 200 |
+| `compact` | 2500 | 2900 |
 | `ui` | 400 | 700 |
 | `markdown` | 120 | 220 |
 | `diff` | 100 | 200 |
@@ -683,12 +688,21 @@ If a requested feature cannot be added this way without touching three or more p
 | `skills` | 80 | 160 |
 | `mention` | 80 | 160 |
 | `event` | 30 | 60 |
-| **Total** | **~2260** | **~4100** |
+| **Total** | **~4860** | **~6700** |
 
 The `ui` budget is deliberately generous after the selector, markdown, and
 diff extraction; the original 250 target assumed a much smaller UI than the
 project grew into. A future pass should split `cmd/pigo` (the interactive
 loop) before raising the `ui` cap again.
+
+The `compact` package is a near-verbatim port of pi-vcc's multi-file extraction
+pipeline (including the tracked-commands shell tokenizer, the ranked brief
+selector, and the brief compressor), so it is far larger than a hand-written
+summarizer would be. The estimate in the original plan (~700/1100) assumed a
+much smaller rewrite; the actual port is ~2800 lines. This budget bump is the
+design discussion required by section 11.4 -- if the size is unacceptable, the
+cheapest cut is dropping `tracked.go` (the `[Tracked Commands]` section defaults
+off in pigo), which removes ~230 lines.
 
 `make loc` should print these counts. Going over a hard cap requires a design discussion.
 

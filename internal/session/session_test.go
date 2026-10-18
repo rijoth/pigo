@@ -76,7 +76,7 @@ func TestCompactionRecordReplacesHistory(t *testing.T) {
 		}
 		ids = append(ids, id)
 	}
-	if err := s.AppendCompaction("the summary", ids[2]); err != nil {
+	if err := s.AppendCompaction("the summary", ids[2], 0); err != nil {
 		t.Fatal(err)
 	}
 	path := s.Path()
@@ -114,11 +114,11 @@ func TestRepeatedCompaction(t *testing.T) {
 	add("one")
 	add("two")
 	add("three")
-	if err := s.AppendCompaction("summary one", ids[1]); err != nil {
+	if err := s.AppendCompaction("summary one", ids[1], 0); err != nil {
 		t.Fatal(err)
 	}
 	add("four")
-	if err := s.AppendCompaction("summary two", ids[2]); err != nil {
+	if err := s.AppendCompaction("summary two", ids[2], 0); err != nil {
 		t.Fatal(err)
 	}
 	path := s.Path()
@@ -153,7 +153,7 @@ func TestCompactionUnknownBoundaryKeepsHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.AppendCompaction("ignored", "does-not-exist"); err != nil {
+	if err := s.AppendCompaction("ignored", "does-not-exist", 0); err != nil {
 		t.Fatal(err)
 	}
 	path := s.Path()
@@ -468,5 +468,66 @@ func TestThinkingLevelPersist(t *testing.T) {
 	SaveThinkingLevel("high")
 	if got := LoadThinkingLevel(); got != "high" {
 		t.Fatalf("got %q, want high", got)
+	}
+}
+
+func TestCompactAllRecordReplaysToSummaryOnly(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, m := range []llm.Message{
+		{Role: llm.RoleUser, Text: "one"},
+		{Role: llm.RoleAssistant, Text: "a"},
+		{Role: llm.RoleUser, Text: "two"},
+	} {
+		id, err := s.Append(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := s.AppendCompaction("all gone", "", len(ids)); err != nil {
+		t.Fatal(err)
+	}
+	path := s.Path()
+	s.Close()
+
+	_, history, replayedIDs, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Text != "[Earlier conversation summary]\nall gone" {
+		t.Fatalf("history: %+v", history)
+	}
+	if len(replayedIDs) != 1 || replayedIDs[0] != "" {
+		t.Fatalf("ids: %+v", replayedIDs)
+	}
+}
+
+func TestGlobalIndex(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id0, _ := s.Append(llm.Message{Role: llm.RoleUser, Text: "one"})
+	id1, _ := s.Append(llm.Message{Role: llm.RoleAssistant, Text: "a"})
+	if err := s.AppendCompaction("sum", id1, 0); err != nil {
+		t.Fatal(err)
+	}
+	id2, _ := s.Append(llm.Message{Role: llm.RoleUser, Text: "two"})
+	s.Close()
+
+	s, _, _, err = Open(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	idx := s.GlobalIndex()
+	if idx[id0] != 0 || idx[id1] != 1 || idx[id2] != 2 {
+		t.Fatalf("global index: %+v", idx)
 	}
 }

@@ -3,13 +3,12 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
+	"pigo/internal/compact"
 	"pigo/internal/event"
 	"pigo/internal/llm"
 	"pigo/internal/tools"
@@ -26,16 +25,15 @@ type Agent struct {
 	MaxRetries int           // transient-failure retries per model call
 	RetryBase  time.Duration // first backoff delay
 	RetryMax   time.Duration // backoff cap
-	KeepRecent int           // messages kept when compacting to recover from overflow
+	// CompactOptions tunes deterministic compaction on context overflow. Zero
+	// values fall back to the compact package defaults.
+	CompactOptions compact.Options
 	// OnCompact, when non-nil, is called after Run compacts history to recover
 	// from a context-overflow error. firstKept is the index in the history passed
 	// to Run of the first kept message; summary is the compaction text. Recovery
 	// proceeds whether or not the caller persists it.
 	OnCompact func(firstKept int, summary string)
 }
-
-// defaultKeepRecent is used when Agent.KeepRecent is unset.
-const defaultKeepRecent = 8
 
 // Run appends userText to history, runs the loop until the model stops calling
 // tools, and returns the updated history. It emits events as it goes.
@@ -56,7 +54,7 @@ func (a *Agent) Run(ctx context.Context, history []llm.Message, userText string,
 		// duplicate it, so that case falls through to the normal error path.
 		if err != nil && !recovered && errors.Is(err, llm.ErrContextTooLarge) &&
 			assistant.Text == "" && len(assistant.Calls) == 0 && len(assistant.Reasoning) == 0 {
-			if h, summary, cut, ok := a.recoverOverflow(ctx, history, base); ok {
+			if h, summary, cut, ok := a.recoverOverflow(history, base); ok {
 				history, recovered = h, true
 				if a.OnCompact != nil {
 					a.OnCompact(cut, summary)
@@ -207,180 +205,22 @@ func cancelledResults(calls []llm.ToolCall) llm.Message {
 	return llm.Message{Role: llm.RoleTool, Results: results}
 }
 
-// compactPrompt is the fixed shape of a compaction summary. Structured
-// sections survive repeated compaction better than free prose.
-const compactPrompt = `Summarize the conversation so far for a coding agent that will continue the work. Use exactly these sections:
-## Goal
-## Constraints & Preferences
-## Progress
-## Key Decisions
-## Next Steps
-## Critical Context
-Preserve file paths, commands, decisions, and unfinished work. Be concise. Reply with the summary only.`
-
-// Compact summarizes the older part of history, keeping the most recent
-// messages. instructions, when non-empty, is appended to the summary request
-// (for `/compact <instructions>`). It returns the new history, the summary,
-// and the index of the first kept message. The caller persists the compaction.
-func Compact(ctx context.Context, p llm.Provider, system string, history []llm.Message, keep int, instructions string) ([]llm.Message, string, int, error) {
-	cut := len(history) - keep
-	if cut < 1 {
-		return history, "", 0, nil
-	}
-	for cut < len(history) && history[cut].Role != llm.RoleUser {
-		cut++
-	}
-	if cut >= len(history) {
-		return history, "", 0, nil
-	}
-	return compactAt(ctx, p, system, history, cut, instructions)
-}
-
-// compactAt summarizes history before cut and returns the new history, the
-// summary, and cut.
-func compactAt(ctx context.Context, p llm.Provider, system string, history []llm.Message, cut int, instructions string) ([]llm.Message, string, int, error) {
-	text := compactPrompt
-	if instructions != "" {
-		text += "\n\nAdditional instructions:\n" + instructions
-	}
-	files := touchedFiles(history)
-	if len(files) > 0 {
-		text += "\n\nFiles touched this session (reference only):\n- " + strings.Join(files, "\n- ")
-	}
-	old := append([]llm.Message(nil), history[:cut]...)
-	old = append(old, llm.Message{Role: llm.RoleUser, Text: text})
-	summary, err := summarize(ctx, p, system, old)
-	if err != nil {
-		return history, "", 0, err
-	}
-	if summary == "" {
-		return history, "", 0, fmt.Errorf("compaction produced an empty summary")
-	}
-	// Persist the cumulative file list with the summary so it survives the
-	// next compaction instead of depending on the model to repeat it.
-	summary += formatFiles(files)
-	summaryMsg := llm.Message{Role: llm.RoleUser, Text: "[Earlier conversation summary]\n" + summary}
-	newHistory := append([]llm.Message{summaryMsg}, history[cut:]...)
-	return newHistory, summary, cut, nil
-}
-
 // recoverOverflow compacts history after the provider rejected a request as too
-// large. The boundary stays inside the original history (index below base) so
-// the caller can reference an already persisted message id. It reports false
-// when no such boundary exists or summarizing fails.
-func (a *Agent) recoverOverflow(ctx context.Context, history []llm.Message, base int) ([]llm.Message, string, int, bool) {
-	keep := a.KeepRecent
-	if keep < 1 {
-		keep = defaultKeepRecent
-	}
-	cut := len(history) - keep
-	if cut >= base {
-		cut = base - 1
-	}
-	for cut > 0 && history[cut].Role != llm.RoleUser {
-		cut--
-	}
-	if cut <= 0 {
+// large. The boundary stays within the persisted history (index at or below
+// base). It reports false when no such boundary exists or compiling fails.
+func (a *Agent) recoverOverflow(history []llm.Message, base int) ([]llm.Message, string, int, bool) {
+	if base <= 0 {
 		return history, "", 0, false
 	}
-	newHistory, summary, cut, err := compactAt(ctx, a.Provider, a.System, history, cut, "")
-	if err != nil {
+	newHistory, res, err := compact.Compact(history, nil, a.CompactOptions.Keep, false, "", nil, a.CompactOptions)
+	if err != nil || !res.OK || res.FirstKept <= 0 || res.FirstKept > base {
 		return history, "", 0, false
 	}
-	return newHistory, summary, cut, true
+	return newHistory, res.Summary, res.FirstKept, true
 }
 
-// branchPrompt asks for a summary of the branch being left behind.
-const branchPrompt = `Summarize the conversation above so another agent can continue from an earlier point without losing useful context. Cover the goal, what was tried, what worked or failed, and any files or commands that mattered. Reply with the summary only.`
-
-// Summarize produces a summary of msgs for switching branches with /tree.
-func Summarize(ctx context.Context, p llm.Provider, system string, msgs []llm.Message) (string, error) {
-	req := append([]llm.Message(nil), msgs...)
-	req = append(req, llm.Message{Role: llm.RoleUser, Text: branchPrompt})
-	return summarize(ctx, p, system, req)
-}
-
-// summarize streams one summary response for a request.
-func summarize(ctx context.Context, p llm.Provider, system string, msgs []llm.Message) (string, error) {
-	stream, err := p.Stream(ctx, llm.Request{System: system, Messages: msgs})
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	for d := range stream {
-		if d.Err != nil {
-			return "", d.Err
-		}
-		b.WriteString(d.Text)
-	}
-	return strings.TrimSpace(b.String()), nil
-}
-
-// filesMarker separates the cumulative touched-file list from a summary's
-// prose. touchedFiles reads it back so file tracking survives compaction.
-const filesMarker = "[Files touched]"
-
-// formatFiles renders the touched-file list appended to a stored summary, or
-// "" when there is nothing to record.
-func formatFiles(files []string) string {
-	if len(files) == 0 {
-		return ""
-	}
-	return "\n\n" + filesMarker + "\n- " + strings.Join(files, "\n- ")
-}
-
-// parseFiles extracts a file list previously written by formatFiles.
-func parseFiles(text string) []string {
-	i := strings.LastIndex(text, filesMarker)
-	if i < 0 {
-		return nil
-	}
-	var out []string
-	for _, line := range strings.Split(text[i+len(filesMarker):], "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "- ") {
-			break
-		}
-		out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "- ")))
-	}
-	return out
-}
-
-// touchedFiles lists the paths read, written, or edited and the commands run
-// during the session, plus the files carried over from earlier compactions, so
-// a summary preserves the full working set.
-func touchedFiles(history []llm.Message) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(s string) {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	for _, m := range history {
-		for _, f := range parseFiles(m.Text) {
-			add(f)
-		}
-		for _, c := range m.Calls {
-			var a struct {
-				Path    string `json:"path"`
-				Command string `json:"command"`
-			}
-			if json.Unmarshal(c.Args, &a) != nil {
-				continue
-			}
-			switch c.Name {
-			case "read", "write", "edit":
-				add(a.Path)
-			case "bash":
-				add("$ " + a.Command)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
+// Summarize produces a deterministic summary of msgs for switching branches
+// with /tree. It never calls a model.
+func Summarize(msgs []llm.Message) string {
+	return compact.CompileRanked(compact.Input{History: msgs, Cut: len(msgs)}, compact.DefaultOptions())
 }
