@@ -4,7 +4,12 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrContextTooLarge marks a provider failure caused by the request exceeding
+// the model's context window. The agent may compact history and retry once.
+var ErrContextTooLarge = errors.New("context too large")
 
 // Role identifies who produced a message.
 type Role string

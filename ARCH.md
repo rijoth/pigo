@@ -213,7 +213,10 @@ type Provider interface {
 
 **Files:**
 
-- `llm/llm.go`: the types above and the `Provider` interface, nothing else.
+- `llm/llm.go`: the types above and the `Provider` interface, plus the
+  `ErrContextTooLarge` sentinel. The Fantasy adapter maps a provider error that
+  reports an oversized context (Fantasy's `ProviderError.IsContextTooLarge`) to
+  that sentinel so the agent can recover without importing Fantasy.
 - `llm/dummy.go`: the no-model provider.
 - `models/models.go`: pigo's `models.json` catalog plus the cached
   `models-store.json`, `ModelEntry`, `AvailableModels`, `Find`, `ContextWindow`,
@@ -295,6 +298,13 @@ emit(Error: max steps reached)
 - Unknown tool name: return an error result, do not crash.
 - On context cancellation mid-turn, return the history as-is plus any completed assistant message. If tool calls were requested but not executed, append synthetic error results (`"cancelled by user"`) so the history stays valid for the provider API (every call needs a result).
 - Tool calls run **sequentially** in v1. Parallelism is an optimization to add only if measured to matter.
+- A provider error that the request exceeded the model's context window
+  (`llm.ErrContextTooLarge`) is recovered **once**: compact the older history in
+  place, call `Agent.OnCompact` so the caller persists a `compaction` record,
+  emit a `Notice`, and retry the same step. Recovery is skipped when any output
+  was already streamed (the turn is no longer idempotent) or when no user-role
+  boundary exists inside the already-persisted history. `Agent.KeepRecent` sets
+  how many recent messages stay verbatim.
 - `MaxSteps` is a constant in `config`.
 
 ### 6.4 `internal/tools`

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -370,5 +371,83 @@ func TestRunNoRetryAfterOutput(t *testing.T) {
 	}
 	if p.idx != 1 {
 		t.Fatalf("retried after output: idx = %d", p.idx)
+	}
+}
+
+// overflowHistory is long enough (relative to KeepRecent) that a user-role
+// boundary exists before the new message.
+func overflowHistory() []llm.Message {
+	return []llm.Message{
+		{Role: llm.RoleUser, Text: "one"},
+		{Role: llm.RoleAssistant, Text: "a"},
+		{Role: llm.RoleUser, Text: "two"},
+		{Role: llm.RoleAssistant, Text: "b"},
+	}
+}
+
+func TestRunRecoversFromContextOverflow(t *testing.T) {
+	p := &fakeProvider{script: [][]llm.Delta{
+		{{Err: fmt.Errorf("request too large: %w", llm.ErrContextTooLarge)}},
+		{{Text: "summary"}},
+		{{Text: "ok"}},
+	}}
+	var compacted int
+	var summary string
+	a := &Agent{
+		Provider:   p,
+		Tools:      map[string]tools.Tool{},
+		MaxSteps:   5,
+		KeepRecent: 2,
+		OnCompact:  func(firstKept int, s string) { compacted, summary = firstKept, s },
+	}
+	var events []event.Event
+	got, err := a.Run(context.Background(), overflowHistory(), "three", collect(&events))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.idx != 3 {
+		t.Fatalf("provider calls = %d, want 3", p.idx)
+	}
+	if compacted != 2 || summary != "summary" {
+		t.Fatalf("OnCompact(%d, %q), want (2, summary)", compacted, summary)
+	}
+	if len(got) != 5 || !strings.HasPrefix(got[0].Text, "[Earlier conversation summary]") {
+		t.Fatalf("recovered history: %+v", got)
+	}
+	if got[len(got)-1].Text != "ok" {
+		t.Fatalf("last message: %+v", got[len(got)-1])
+	}
+	var notice bool
+	for _, e := range events {
+		notice = notice || (e.Kind == event.Notice && strings.Contains(e.Text, "compacted"))
+	}
+	if !notice {
+		t.Fatalf("missing compaction notice: %+v", events)
+	}
+}
+
+func TestRunRecoversOnlyOnce(t *testing.T) {
+	p := &fakeProvider{script: [][]llm.Delta{
+		{{Err: llm.ErrContextTooLarge}},
+		{{Text: "summary"}},
+		{{Err: llm.ErrContextTooLarge}},
+	}}
+	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, KeepRecent: 2}
+	if _, err := a.Run(context.Background(), overflowHistory(), "three", func(event.Event) {}); !errors.Is(err, llm.ErrContextTooLarge) {
+		t.Fatalf("err = %v, want ErrContextTooLarge", err)
+	}
+	if p.idx != 3 {
+		t.Fatalf("provider calls = %d, want 3 (one recovery only)", p.idx)
+	}
+}
+
+func TestRunContextOverflowWithoutBoundary(t *testing.T) {
+	p := &fakeProvider{script: [][]llm.Delta{{{Err: llm.ErrContextTooLarge}}}}
+	a := &Agent{Provider: p, Tools: map[string]tools.Tool{}, MaxSteps: 5, MaxRetries: 3, KeepRecent: 2}
+	if _, err := a.Run(context.Background(), nil, "hi", func(event.Event) {}); !errors.Is(err, llm.ErrContextTooLarge) {
+		t.Fatalf("err = %v, want ErrContextTooLarge", err)
+	}
+	if p.idx != 1 {
+		t.Fatalf("provider calls = %d, want 1 (no backoff, no summarization)", p.idx)
 	}
 }

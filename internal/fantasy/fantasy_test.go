@@ -3,6 +3,7 @@ package fantasy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -144,5 +145,26 @@ func TestFantasyStreamMapping(t *testing.T) {
 	}
 	if len(model.call.Tools) != 1 {
 		t.Fatalf("tools = %+v", model.call.Tools)
+	}
+}
+
+func TestMapProviderErrorContextTooLarge(t *testing.T) {
+	err := mapProviderError(&fantasy.ProviderError{Message: "too big", ContextTooLargeErr: true})
+	if !errors.Is(err, llm.ErrContextTooLarge) {
+		t.Fatalf("err = %v, want ErrContextTooLarge", err)
+	}
+}
+
+func TestMapProviderErrorPassesOthersThrough(t *testing.T) {
+	other := &fantasy.ProviderError{Message: "rate limited"}
+	if got := mapProviderError(other); got != error(other) {
+		t.Fatalf("got %v, want the original error", got)
+	}
+	plain := errors.New("boom")
+	if got := mapProviderError(plain); got != plain {
+		t.Fatalf("got %v, want the original error", got)
+	}
+	if mapProviderError(nil) != nil {
+		t.Fatal("nil did not stay nil")
 	}
 }

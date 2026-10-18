@@ -254,7 +254,7 @@ func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan l
 		ProviderOptions: f.thinkingOptions(req.Thinking),
 	})
 	if err != nil {
-		return nil, err
+		return nil, mapProviderError(err)
 	}
 	ch := make(chan llm.Delta)
 	go func() {
@@ -303,7 +303,7 @@ func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan l
 					OutputTokens: int(part.Usage.OutputTokens),
 				}
 			case fantasy.StreamPartTypeError:
-				d.Err = part.Error
+				d.Err = mapProviderError(part.Error)
 			default:
 				continue
 			}
@@ -315,6 +315,20 @@ func (f *fantasyProvider) Stream(ctx context.Context, req llm.Request) (<-chan l
 		}
 	}()
 	return ch, nil
+}
+
+// mapProviderError converts a provider error that reports an oversized context
+// into llm.ErrContextTooLarge so the agent can compact history and retry. Other
+// errors pass through unchanged.
+func mapProviderError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var pe *fantasy.ProviderError
+	if errors.As(err, &pe) && pe.IsContextTooLarge() {
+		return fmt.Errorf("%w: %w", llm.ErrContextTooLarge, err)
+	}
+	return err
 }
 
 // marshalMetadata serializes provider metadata (reasoning signatures) to

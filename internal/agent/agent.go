@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,20 +26,45 @@ type Agent struct {
 	MaxRetries int           // transient-failure retries per model call
 	RetryBase  time.Duration // first backoff delay
 	RetryMax   time.Duration // backoff cap
+	KeepRecent int           // messages kept when compacting to recover from overflow
+	// OnCompact, when non-nil, is called after Run compacts history to recover
+	// from a context-overflow error. firstKept is the index in the history passed
+	// to Run of the first kept message; summary is the compaction text. Recovery
+	// proceeds whether or not the caller persists it.
+	OnCompact func(firstKept int, summary string)
 }
+
+// defaultKeepRecent is used when Agent.KeepRecent is unset.
+const defaultKeepRecent = 8
 
 // Run appends userText to history, runs the loop until the model stops calling
 // tools, and returns the updated history. It emits events as it goes.
 func (a *Agent) Run(ctx context.Context, history []llm.Message, userText string, emit func(event.Event)) ([]llm.Message, error) {
+	base := len(history)
 	history = append(history, llm.Message{Role: llm.RoleUser, Text: userText})
 	steps := a.MaxSteps
 	if steps <= 0 {
 		steps = 50
 	}
 	specs := a.toolSpecs()
+	recovered := false
 
 	for step := 0; step < steps; step++ {
 		assistant, usage, err := a.streamWithRetry(ctx, llm.Request{System: a.System, Messages: history, Tools: specs, Thinking: a.Thinking}, emit)
+		// A context-overflow error arrives before any output, so the turn can be
+		// compacted and retried once. Recovering after partial output would
+		// duplicate it, so that case falls through to the normal error path.
+		if err != nil && !recovered && errors.Is(err, llm.ErrContextTooLarge) &&
+			assistant.Text == "" && len(assistant.Calls) == 0 && len(assistant.Reasoning) == 0 {
+			if h, summary, cut, ok := a.recoverOverflow(ctx, history, base); ok {
+				history, recovered = h, true
+				if a.OnCompact != nil {
+					a.OnCompact(cut, summary)
+				}
+				emit(event.Event{Kind: event.Notice, Text: "context too large; compacted and retrying"})
+				continue
+			}
+		}
 		if assistant.Text != "" || len(assistant.Calls) > 0 || len(assistant.Reasoning) > 0 {
 			history = append(history, assistant)
 		}
@@ -122,6 +148,9 @@ func (a *Agent) streamWithRetry(ctx context.Context, req llm.Request, emit func(
 				return assistant, usage, err
 			}
 		}
+		if errors.Is(err, llm.ErrContextTooLarge) {
+			return assistant, usage, err // compaction, not backoff, recovers this
+		}
 		if attempt >= a.MaxRetries || ctx.Err() != nil {
 			return assistant, usage, err
 		}
@@ -204,6 +233,12 @@ func Compact(ctx context.Context, p llm.Provider, system string, history []llm.M
 	if cut >= len(history) {
 		return history, "", 0, nil
 	}
+	return compactAt(ctx, p, system, history, cut, instructions)
+}
+
+// compactAt summarizes history before cut and returns the new history, the
+// summary, and cut.
+func compactAt(ctx context.Context, p llm.Provider, system string, history []llm.Message, cut int, instructions string) ([]llm.Message, string, int, error) {
 	text := compactPrompt
 	if instructions != "" {
 		text += "\n\nAdditional instructions:\n" + instructions
@@ -227,6 +262,32 @@ func Compact(ctx context.Context, p llm.Provider, system string, history []llm.M
 	summaryMsg := llm.Message{Role: llm.RoleUser, Text: "[Earlier conversation summary]\n" + summary}
 	newHistory := append([]llm.Message{summaryMsg}, history[cut:]...)
 	return newHistory, summary, cut, nil
+}
+
+// recoverOverflow compacts history after the provider rejected a request as too
+// large. The boundary stays inside the original history (index below base) so
+// the caller can reference an already persisted message id. It reports false
+// when no such boundary exists or summarizing fails.
+func (a *Agent) recoverOverflow(ctx context.Context, history []llm.Message, base int) ([]llm.Message, string, int, bool) {
+	keep := a.KeepRecent
+	if keep < 1 {
+		keep = defaultKeepRecent
+	}
+	cut := len(history) - keep
+	if cut >= base {
+		cut = base - 1
+	}
+	for cut > 0 && history[cut].Role != llm.RoleUser {
+		cut--
+	}
+	if cut <= 0 {
+		return history, "", 0, false
+	}
+	newHistory, summary, cut, err := compactAt(ctx, a.Provider, a.System, history, cut, "")
+	if err != nil {
+		return history, "", 0, false
+	}
+	return newHistory, summary, cut, true
 }
 
 // branchPrompt asks for a summary of the branch being left behind.

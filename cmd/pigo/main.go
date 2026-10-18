@@ -118,6 +118,7 @@ func run() int {
 		MaxRetries: config.MaxRetries,
 		RetryBase:  time.Duration(config.RetryBaseMs) * time.Millisecond,
 		RetryMax:   time.Duration(config.RetryMaxMs) * time.Millisecond,
+		KeepRecent: config.KeepRecentMsgs,
 	}
 	if *confirm {
 		ag.Approve = func(call llm.ToolCall) bool {
@@ -131,9 +132,9 @@ func run() int {
 	if *prompt != "" {
 		if *jsonOut {
 			emit := func(ev event.Event) { _ = event.Encode(os.Stdout, ev) }
-			return runOnce(ag, sess, history, *prompt, emit, func() {})
+			return runOnce(ag, sess, history, ids, *prompt, emit, func() {})
 		}
-		return runOnce(ag, sess, history, *prompt, u.Render, u.Interrupt)
+		return runOnce(ag, sess, history, ids, *prompt, u.Render, u.Interrupt)
 	}
 	return runInteractive(ag, sess, history, ids, u, modelLabel, banner, projectDir, sessionID, func(s *session.Session) { active = s })
 }
@@ -210,7 +211,7 @@ func bannerText(contexts []config.ContextFile, loaded []skills.Skill, modelLabel
 	return b.String()
 }
 
-func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prompt string, emit func(event.Event), interrupt func()) int {
+func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, prompt string, emit func(event.Event), interrupt func()) int {
 	if prompt == "-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -222,14 +223,16 @@ func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prom
 		fmt.Fprintln(os.Stderr, "pigo: empty prompt")
 		return 2
 	}
+	ag.OnCompact = func(firstKept int, summary string) {
+		ids = persistCompaction(sess, ids, firstKept, summary)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	n := len(history)
 	history, err := ag.Run(ctx, history, prompt, emit)
 	if ctx.Err() != nil {
 		interrupt()
 	}
-	if _, err := appendAll(sess, history[n:]); err != nil {
+	if _, err := appendAll(sess, history[len(ids):]); err != nil {
 		return fatal(err)
 	}
 	if err != nil {
@@ -240,6 +243,12 @@ func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, prom
 
 func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Message, ids []string, u *ui.UI, modelLabel string, banner func(string) string, projectDir string, sessionID func() string, setSession func(*session.Session)) int {
 	var lastInput int
+	// A recovery compaction replaces older history in place; reflect it in the
+	// record-id list so the post-turn append stays aligned with the session.
+	ag.OnCompact = func(firstKept int, summary string) {
+		ids = persistCompaction(sess, ids, firstKept, summary)
+		lastInput = 0
+	}
 	contextWindow := models.ContextWindow(modelLabel)
 	compactAt := compactLimit(contextWindow)
 	levels := supportedThinking(modelLabel)
@@ -434,7 +443,6 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 		if u.Interactive() {
 			fmt.Fprintln(os.Stdout)
 		}
-		n := len(history)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		u.StartSpinner()
 		newHistory, err := ag.Run(ctx, history, line, emit)
@@ -444,7 +452,9 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 			u.Interrupt()
 		}
 		history = newHistory
-		added, err := appendAll(sess, history[n:])
+		// len(ids) messages are already persisted; the rest were added this
+		// turn (a recovery compaction advances ids during Run).
+		added, err := appendAll(sess, history[len(ids):])
 		if err != nil {
 			return fatal(err)
 		}
@@ -493,6 +503,23 @@ func appendAll(sess *session.Session, msgs []llm.Message) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// persistCompaction appends a compaction record for a recovery that Run
+// performed in place and returns the updated record-id list, with "" marking
+// the summary message. It keeps the caller's ids parallel to history.
+func persistCompaction(sess *session.Session, ids []string, firstKept int, summary string) []string {
+	if firstKept < 0 || firstKept > len(ids) {
+		return ids
+	}
+	firstKeptID := ""
+	if firstKept < len(ids) {
+		firstKeptID = ids[firstKept]
+	}
+	if err := sess.AppendCompaction(summary, firstKeptID); err != nil {
+		fmt.Fprintln(os.Stderr, "pigo: session:", err)
+	}
+	return append([]string{""}, ids[firstKept:]...)
 }
 
 // compactLimit returns the input-token threshold that triggers compaction: a
