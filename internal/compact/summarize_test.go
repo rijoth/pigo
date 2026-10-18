@@ -52,7 +52,7 @@ func TestCompileSections(t *testing.T) {
 	if !strings.Contains(got, "[user]") {
 		t.Fatalf("missing brief transcript: %q", got)
 	}
-	if !strings.Contains(got, "vcc_recall") {
+	if !strings.Contains(got, "pigo_recall") {
 		t.Fatalf("missing recall note: %q", got)
 	}
 	if strings.Index(got, "[Session Goal]") > strings.Index(got, "[Files And Changes]") {
@@ -75,7 +75,7 @@ func TestMergePreviousModifiedWinsOverCreated(t *testing.T) {
 func TestStripRecallNote(t *testing.T) {
 	stored := WrapLongLines("body text"+summarySeparator+recallNote, 0)
 	got := stripRecallNote(stored)
-	if strings.Contains(got, "vcc_recall") {
+	if strings.Contains(got, "pigo_recall") {
 		t.Fatalf("recall note not stripped: %q", got)
 	}
 	if !strings.HasPrefix(got, "body text") {

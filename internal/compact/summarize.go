@@ -371,10 +371,24 @@ func CompileRanked(in Input, opts Options) string {
 	})
 }
 
-var recallNoteRe = regexp.MustCompile(`\n*(?:---\n+)?` + recallNotePattern() + `\n*`)
+var recallNoteVariants = []string{
+	recallNote,
+	// Legacy pi-vcc wording, in case a stored summary predates pigo_recall.
+	"Use `vcc_recall` to search for prior work, decisions, and context from before this summary. Do not redo work already completed.",
+}
 
-func recallNotePattern() string {
-	words := regexp.MustCompile(`\s+`).Split(recallNote, -1)
+var recallNoteRe = regexp.MustCompile(`\n*(?:---\n+)?(?:` + recallNoteAlternation() + `)\n*`)
+
+func recallNoteAlternation() string {
+	pats := make([]string, 0, len(recallNoteVariants))
+	for _, note := range recallNoteVariants {
+		pats = append(pats, recallNotePattern(note))
+	}
+	return strings.Join(pats, "|")
+}
+
+func recallNotePattern(note string) string {
+	words := regexp.MustCompile(`\s+`).Split(note, -1)
 	for i, w := range words {
 		words[i] = regexp.QuoteMeta(w)
 	}

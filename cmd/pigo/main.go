@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -66,6 +67,10 @@ func run() int {
 
 	active := sess
 	sessionID := func() string { return active.ID() }
+	toolset := tools.Default()
+	toolset["pigo_recall"] = tools.Recall{Fn: func(_ context.Context, args json.RawMessage) (string, error) {
+		return active.Recall(args)
+	}}
 	var provider llm.Provider
 	var modelLabel string
 	if *modelFlag == "" && os.Getenv("PIGO_PROVIDER") == "" && os.Getenv("PIGO_MODEL") == "" {
@@ -113,7 +118,7 @@ func run() int {
 	u.SetThinkingLevel(thinking)
 	ag := &agent.Agent{
 		Provider:       provider,
-		Tools:          tools.Default(),
+		Tools:          toolset,
 		System:         system,
 		Thinking:       thinking,
 		MaxSteps:       config.MaxSteps,
@@ -422,6 +427,15 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				continue
 			case "session":
 				printSession(os.Stdout, sess, len(history), u, contextWindow)
+				continue
+			case "recall":
+				b, _ := json.Marshal(map[string]any{"query": strings.TrimSpace(arg)})
+				out, rerr := sess.Recall(b)
+				if rerr != nil {
+					u.Render(event.Event{Kind: event.Error, Err: rerr})
+				} else if out != "" {
+					fmt.Fprintln(os.Stdout, out)
+				}
 				continue
 			case "compact":
 				force = true

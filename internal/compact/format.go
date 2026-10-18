@@ -144,7 +144,7 @@ func capBrief(text string) string {
 }
 
 // recallNote is appended once to every compiled summary.
-const recallNote = "Use `vcc_recall` to search for prior work, decisions, and context from before this summary. Do not redo work already completed."
+const recallNote = "Use `pigo_recall` to search for prior work, decisions, and context from before this summary. Do not redo work already completed."
 
 // sectionData is the extracted, structured content of a summary.
 type sectionData struct {

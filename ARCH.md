@@ -330,6 +330,13 @@ Each tool is one file, one struct, one `Run`. Arguments are decoded into a small
 | `write` | `path`, `content` | Create or overwrite. Create parent directories. Return bytes written. |
 | `edit` | `path`, `old`, `new` | Exact, literal string replacement. `old` must occur **exactly once**; otherwise return an error explaining zero or multiple matches. No regex, no fuzzy matching. |
 | `bash` | `command`, optional `timeout` (seconds) | Run via `bash -c` in the working directory. Capture combined stdout and stderr. Enforce a timeout (default in config). Kill the whole process group on timeout or cancel. Truncate to the **tail** of the output (`MaxBashBytes`) because the end usually has the error. Include exit code in the result. |
+| `pigo_recall` | `query`, `ref`, `mode`, `scope`, `limit`, `page` | Search this session's history, including messages dropped by compaction. `query` matches entries containing every word (case-insensitive; each word may be a regex); `ref:#N` expands one entry in full; `mode:"touched"` lists files with their refs. `scope:"lineage"` (default) is the active branch, `"all"` adds abandoned branches. Returns the same session-global `#N` refs used in compaction summaries. |
+
+The four file/shell tools are the core capabilities. `pigo_recall` is a
+session-backed extra: it is not part of `tools.Default()`; `main` wires it to
+the active session via `tools.Recall{Fn: ...}`, so the `tools` package stays
+free of a `session` dependency. `internal/session/recall.go` owns the search and
+its `#N` numbering, sharing the index space with `Session.GlobalIndex`.
 
 **Truncation messages must be explicit** (for example `[output truncated: showing last 20000 of 83211 bytes]`) so the model knows information is missing.
 
@@ -431,6 +438,7 @@ All terminal concerns live here and only here.
 | `/new` | Start a fresh session |
 | `/resume` | Pick another session in the current project; clears the screen and restores it |
 | `/compact [keep:N] [prompt]` | Force deterministic compaction. `keep:N` keeps N recent user turns; any other text is sent as a follow-up prompt after compacting. |
+| `/recall [query]` | Search this session's history (including anything dropped by compaction) for prior work and decisions. With no query, list the most recent entries. |
 | `/tree [n\|id]` | Show the session tree and switch the active branch to a chosen entry. With an argument, switch directly (1-based number or id prefix). The abandoned branch is summarized on request. |
 | `/model` | Open the interactive model picker (Ctrl+L). With an argument, switch directly. |
 | `/thinking [level]` | Set the reasoning level (clamped to the model's support); no argument prints the current level, the expanded/collapsed state, and the available levels. Shift+Tab cycles the level. The chosen level is remembered in the state dir. Ctrl+T separately toggles whether blocks render expanded or collapsed. |
@@ -611,10 +619,10 @@ pigo/
     models/    models.go  models_test.go  models_available_test.go  store_test.go
     providers/ providers.go  keys_test.go  store_test.go
     selector/  selector.go  selector_test.go
-    session/   session.go  session_test.go
+    session/   session.go  recall.go  session_test.go  recall_test.go
     skills/    skills.go  skills_test.go
     mention/   mention.go  mention_test.go
-    tools/     tools.go  read.go  write.go  edit.go  bash.go  *_test.go
+    tools/     tools.go  read.go  write.go  edit.go  bash.go  recall.go  *_test.go
     ui/        ui.go  tool.go  style.go  readline.go  commands.go  selector.go
   go.mod
   Makefile          # build, test, vet, fmt, line-count
