@@ -23,6 +23,7 @@ secrets.*
 
 # Local working notes (not for version control)
 features.md
+.plans/
 
 # Go
 vendor/
