@@ -20,6 +20,7 @@ import (
 	"pigo/internal/event"
 	"pigo/internal/fantasy"
 	"pigo/internal/llm"
+	"pigo/internal/mention"
 	"pigo/internal/models"
 	"pigo/internal/providers"
 	"pigo/internal/session"
@@ -223,6 +224,7 @@ func runOnce(ag *agent.Agent, sess *session.Session, history []llm.Message, ids 
 		fmt.Fprintln(os.Stderr, "pigo: empty prompt")
 		return 2
 	}
+	prompt = mention.Expand(prompt)
 	ag.OnCompact = func(firstKept int, summary string) {
 		ids = persistCompaction(sess, ids, firstKept, summary)
 	}
@@ -440,6 +442,7 @@ func runInteractive(ag *agent.Agent, sess *session.Session, history []llm.Messag
 				history, ids, lastInput = h, newIDs, 0
 			}
 		}
+		line = mention.Expand(line)
 		if u.Interactive() {
 			fmt.Fprintln(os.Stdout)
 		}

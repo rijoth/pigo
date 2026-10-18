@@ -72,9 +72,9 @@ It prints to normal terminal stdout (scrollback works, copy/paste works), reads 
 **Dependency direction (strict, enforced by review):**
 
 ```
-main -> ui, agent, session, config, auth, models, providers, fantasy
+main -> ui, agent, session, config, auth, models, providers, fantasy, mention
 agent -> llm, tools, event
-ui -> event, llm, config, markdown, selector, diff
+ui -> event, llm, config, markdown, selector, diff, mention
 markdown -> config
 selector -> (stdlib only)
 diff -> (stdlib only)
@@ -88,6 +88,7 @@ event -> llm (types only)
 config -> (stdlib only)
 auth -> (stdlib only)
 skills -> config
+mention -> config
 ```
 
 `agent` must never import `ui`. `tools` must never import `agent`, `llm`, or `ui`. The agent reports what happens by emitting events; the UI decides how to show them.
@@ -542,6 +543,24 @@ for {
 
 **Exit codes:** `0` success, `1` runtime error, `2` usage error. In `-p` mode, a failed turn exits non-zero.
 
+### 6.11 `internal/mention`
+
+`@path` mentions in a prompt expand to the file's contents before the turn
+runs. `main` calls `mention.Expand` on the input line (interactive and `-p`);
+there is no completion hook and no new tool.
+
+- A mention is an `@` at the start of the text or after whitespace, followed by
+  a non-empty run of non-space characters. A token that does not name a
+  readable text file is left unchanged, so prose like an email address is
+  untouched. A path with trailing punctuation (`@main.go.`) is retried without
+  it, and the punctuation is preserved after the block.
+- Expansion wraps contents as `<file path="...">\n...\n</file>`, truncating at
+  `config.MaxReadBytes` with an explicit marker. Directories and binary files
+  are skipped; a leading `~` is resolved to the home directory.
+- `mention.Collapse` reverses the block for display, so `ui.Restore` shows the
+  user's original `@path` text rather than the expanded contents. The session
+  still stores the expanded message, which is what the model saw.
+
 ## 7. Project context file
 
 On startup, `config.PromptWithContext` builds the system prompt from two layers:
@@ -590,6 +609,7 @@ pigo/
     selector/  selector.go  selector_test.go
     session/   session.go  session_test.go
     skills/    skills.go  skills_test.go
+    mention/   mention.go  mention_test.go
     tools/     tools.go  read.go  write.go  edit.go  bash.go  *_test.go
     ui/        ui.go  tool.go  style.go  readline.go  commands.go  selector.go
   go.mod
@@ -661,8 +681,9 @@ If a requested feature cannot be added this way without touching three or more p
 | `selector` | 200 | 380 |
 | `config` | 30 | 60 |
 | `skills` | 80 | 160 |
+| `mention` | 80 | 160 |
 | `event` | 30 | 60 |
-| **Total** | **~2180** | **~3940** |
+| **Total** | **~2260** | **~4100** |
 
 The `ui` budget is deliberately generous after the selector, markdown, and
 diff extraction; the original 250 target assumed a much smaller UI than the

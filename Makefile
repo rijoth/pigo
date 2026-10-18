@@ -18,7 +18,7 @@ clean:
 	rm -f $(BIN)
 
 loc:
-	@for p in cmd/pigo internal/agent internal/llm internal/models internal/providers internal/fantasy internal/tools internal/session internal/ui internal/markdown internal/diff internal/selector internal/config internal/skills internal/event; do \
+	@for p in cmd/pigo internal/agent internal/llm internal/models internal/providers internal/fantasy internal/tools internal/session internal/ui internal/markdown internal/mention internal/diff internal/selector internal/config internal/skills internal/event; do \
 		n=$$(find $$p -name '*.go' ! -name '*_test.go' -exec cat {} + | grep -vE '^[[:space:]]*(//|$$)' | wc -l); \
 		printf '%-18s %s\n' $$p $$n; \
 	done

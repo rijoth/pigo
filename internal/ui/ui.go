@@ -17,6 +17,7 @@ import (
 	"pigo/internal/event"
 	"pigo/internal/llm"
 	"pigo/internal/markdown"
+	"pigo/internal/mention"
 )
 
 // ErrInterrupt signals that the user pressed Ctrl+C at the prompt.
@@ -247,7 +248,7 @@ func (u *UI) Restore(header string, history []llm.Message) {
 	for _, m := range history {
 		switch m.Role {
 		case llm.RoleUser:
-			u.write(u.prompt(MainPrompt, "") + m.Text + "\n")
+			u.write(u.prompt(MainPrompt, "") + mention.Collapse(m.Text) + "\n")
 		case llm.RoleAssistant:
 			for i := range m.Reasoning {
 				u.renderThinking(m.Reasoning[i].Text)
